@@ -6,7 +6,7 @@ const client = generateClient<Schema>();
 
 function App() {
   const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
-
+  const [chatMessage, setChatMessage] = useState<string>("");
   useEffect(() => {
     client.models.Todo.observeQuery().subscribe({
       next: (data) => setTodos([...data.items]),
@@ -15,6 +15,14 @@ function App() {
 
   function createTodo() {
     client.models.Todo.create({ content: window.prompt("Todo content") });
+  }
+
+  async function chat() {
+    const response = await client.mutations.chat({
+      messages: ["Hello there!"],
+    });
+    console.log(response);
+    setChatMessage(response.data || "");
   }
 
   return (
@@ -26,6 +34,8 @@ function App() {
           <li key={todo.id}>{todo.content}</li>
         ))}
       </ul>
+      <button onClick={chat}>Chat</button>
+      <p>{chatMessage}</p>
       <div>
         🥳 App successfully hosted. Try creating a new todo.
         <br />
