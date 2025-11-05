@@ -74,22 +74,18 @@ function App() {
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
+        const lines = chunk.split('\n').filter(line => line.trim());
         
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
+          try {
+            const event = JSON.parse(line);
             
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.text) {
-                fullMessage += parsed.text;
-                setStreamingMessage(fullMessage);
-              }
-            } catch (e) {
-              console.error("Failed to parse chunk:", e);
+            if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+              fullMessage += event.delta.text;
+              setStreamingMessage(fullMessage);
             }
+          } catch (e) {
+            console.error("Failed to parse event:", e);
           }
         }
       }

@@ -4,13 +4,13 @@ const client = new Anthropic({
   apiKey: process.env["ANTHROPIC_API_KEY"],
 });
 
-async function chatClaudeStream(messages: Anthropic.MessageParam[]) {
-  const stream = await client.messages.create({
+function chatClaudeStream(messages: Anthropic.MessageParam[]) {
+  const stream = client.messages.stream({
     max_tokens: 2048,
     messages,
     model: "claude-sonnet-4-5-20250929",
-    stream: true,
-    system: "You are a helpful AI assistant. You provide clear, accurate, and thoughtful responses to user questions. You are concise but thorough, and you acknowledge when you're uncertain about something. You aim to be conversational yet professional.",
+    system:
+      "You are a helpful AI assistant. You provide clear, accurate, and thoughtful responses to user questions. You are concise but thorough, and you acknowledge when you're uncertain about something. You aim to be conversational yet professional.",
   });
   return stream;
 }
@@ -55,20 +55,12 @@ export const handler = awslambda.streamifyResponse(
         return;
       }
 
-      const stream = await chatClaudeStream(messages);
+      const stream = chatClaudeStream(messages);
 
       for await (const event of stream) {
-        if (
-          event.type === "content_block_delta" &&
-          event.delta.type === "text_delta"
-        ) {
-          responseStream.write(
-            `data: ${JSON.stringify({ text: event.delta.text })}\n\n`
-          );
-        }
+        console.log("Event:", event);
+        responseStream.write(`${JSON.stringify(event)}\n\n`);
       }
-
-      responseStream.write("data: [DONE]\n\n");
       responseStream.end();
     } catch (error) {
       console.error("Stream error:", error);
