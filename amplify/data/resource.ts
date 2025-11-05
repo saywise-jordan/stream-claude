@@ -1,5 +1,4 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
-import { chat } from "../functions/chat/resource";
 
 /*== STEP 1 ===============================================================
 The section below creates a Todo database table with a "content" field. Try
@@ -13,14 +12,6 @@ const schema = a.schema({
       content: a.string(),
     })
     .authorization((allow) => [allow.publicApiKey()]),
-  chat: a
-    .mutation()
-    .arguments({
-      messages: a.string().array().required(),
-    })
-    .returns(a.string())
-    .authorization((allow) => [allow.publicApiKey()])
-    .handler(a.handler.function(chat)),
 });
 
 export type Schema = ClientSchema<typeof schema>;
