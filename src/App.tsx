@@ -7,11 +7,17 @@ import { Send } from "lucide-react";
 
 const client = generateClient<Schema>();
 
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
+
 function App() {
   const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
-  const [chatMessage, setChatMessage] = useState<string>("");
+  const [messages, setMessages] = useState<Message[]>([]);
   const [userInput, setUserInput] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
+  const [streamingMessage, setStreamingMessage] = useState<string>("");
 
   useEffect(() => {
     client.models.Todo.observeQuery().subscribe({
@@ -28,14 +34,23 @@ function App() {
 
     const chatUrl = amplifyOutputs.custom?.chatUrl;
     if (!chatUrl) {
-      setChatMessage("Error: Function URL not found in amplify_outputs.json");
+      setStreamingMessage("Error: Function URL not found in amplify_outputs.json");
       return;
     }
 
-    setIsStreaming(true);
-    setChatMessage("");
     const messageToSend = userInput;
     setUserInput("");
+    
+    const newUserMessage: Message = {
+      role: "user",
+      content: messageToSend,
+    };
+    
+    const updatedMessages = [...messages, newUserMessage];
+    setMessages(updatedMessages);
+
+    setIsStreaming(true);
+    setStreamingMessage("");
 
     try {
       const response = await fetch(chatUrl, {
@@ -43,7 +58,7 @@ function App() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ message: messageToSend }),
+        body: JSON.stringify({ messages: updatedMessages }),
       });
 
       if (!response.body) {
@@ -70,7 +85,7 @@ function App() {
               const parsed = JSON.parse(data);
               if (parsed.text) {
                 fullMessage += parsed.text;
-                setChatMessage(fullMessage);
+                setStreamingMessage(fullMessage);
               }
             } catch (e) {
               console.error("Failed to parse chunk:", e);
@@ -78,10 +93,19 @@ function App() {
           }
         }
       }
+
+      if (fullMessage) {
+        const assistantMessage: Message = {
+          role: "assistant",
+          content: fullMessage,
+        };
+        setMessages([...updatedMessages, assistantMessage]);
+      }
     } catch (error) {
-      setChatMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      setStreamingMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsStreaming(false);
+      setStreamingMessage("");
     }
   }
 
@@ -109,9 +133,32 @@ function App() {
         
         <Card className="mb-4">
           <CardBody>
-            <pre className="whitespace-pre-wrap min-h-[100px] max-h-[400px] overflow-y-auto">
-              {chatMessage || "Type a message to start chatting..."}
-            </pre>
+            <div className="min-h-[200px] max-h-[500px] overflow-y-auto space-y-4">
+              {messages.length === 0 && !streamingMessage && (
+                <p className="text-gray-500">Type a message to start chatting...</p>
+              )}
+              {messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`p-3 rounded-lg ${
+                    message.role === "user"
+                      ? "bg-blue-100 ml-8"
+                      : "bg-gray-100 mr-8"
+                  }`}
+                >
+                  <p className="font-semibold text-sm mb-1">
+                    {message.role === "user" ? "You" : "Claude"}
+                  </p>
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                </div>
+              ))}
+              {streamingMessage && (
+                <div className="p-3 rounded-lg bg-gray-100 mr-8">
+                  <p className="font-semibold text-sm mb-1">Claude</p>
+                  <p className="whitespace-pre-wrap">{streamingMessage}</p>
+                </div>
+              )}
+            </div>
           </CardBody>
         </Card>
 
