@@ -1,11 +1,27 @@
+import { Anthropic } from "@anthropic-ai/sdk";
+
+const client = new Anthropic({
+  apiKey: process.env["ANTHROPIC_API_KEY"],
+});
+
+async function chatClaudeStream(messages: Anthropic.MessageParam[]) {
+  const stream = await client.messages.create({
+    max_tokens: 1024,
+    messages,
+    model: "claude-sonnet-4-5-20250929",
+    stream: true,
+  });
+  return stream;
+}
+
 export const handler = awslambda.streamifyResponse(
   async (event, responseStream) => {
-    // Metadata is a JSON serializable JS object. Its shape is not defined here.
     const metadata = {
       statusCode: 200,
       headers: {
-        "Content-Type": "application/json",
-        CustomHeader: "outerspace",
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
       },
     };
 
@@ -15,14 +31,33 @@ export const handler = awslambda.streamifyResponse(
       metadata
     );
 
-    responseStream.write("Streaming with Helper \n");
-    await new Promise((r) => setTimeout(r, 1000));
-    responseStream.write("Hello 0 \n");
-    await new Promise((r) => setTimeout(r, 1000));
-    responseStream.write("Hello 1 \n");
-    await new Promise((r) => setTimeout(r, 1000));
-    responseStream.write("Hello 2 \n");
-    await new Promise((r) => setTimeout(r, 1000));
-    responseStream.end();
+    try {
+      const stream = await chatClaudeStream([
+        {
+          role: "user",
+          content: "Hello, how are you?",
+        },
+      ]);
+
+      for await (const event of stream) {
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "text_delta"
+        ) {
+          responseStream.write(
+            `data: ${JSON.stringify({ text: event.delta.text })}\n\n`
+          );
+        }
+      }
+
+      responseStream.write("data: [DONE]\n\n");
+      responseStream.end();
+    } catch (error) {
+      console.error("Stream error:", error);
+      responseStream.write(
+        `data: ${JSON.stringify({ error: "Stream failed" })}\n\n`
+      );
+      responseStream.end();
+    }
   }
 );
