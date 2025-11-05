@@ -25,17 +25,31 @@ export const handler = awslambda.streamifyResponse(
       },
     };
 
-    // Assign to the responseStream parameter to prevent accidental reuse of the non-wrapped stream.
     responseStream = awslambda.HttpResponseStream.from(
       responseStream,
       metadata
     );
 
     try {
+      let userMessage = "Hello, how are you?";
+
+      console.log("Event:", event);
+
+      if (event.body) {
+        try {
+          const body = JSON.parse(event.body);
+          if (body.message && typeof body.message === "string") {
+            userMessage = body.message;
+          }
+        } catch (parseError) {
+          console.error("Failed to parse request body:", parseError);
+        }
+      }
+
       const stream = await chatClaudeStream([
         {
           role: "user",
-          content: "Hello, how are you?",
+          content: userMessage,
         },
       ]);
 
