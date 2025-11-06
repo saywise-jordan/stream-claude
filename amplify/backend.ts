@@ -16,11 +16,11 @@ const backend = defineBackend({
 
 const chatFunctionLambda = backend.chat.resources.lambda;
 const chatFunctionUrl = chatFunctionLambda.addFunctionUrl({
-  authType: FunctionUrlAuthType.NONE,
+  authType: FunctionUrlAuthType.AWS_IAM,
   invokeMode: InvokeMode.RESPONSE_STREAM,
   cors: {
-    allowedOrigins: ["http://localhost:5173"],
-    allowedMethods: [HttpMethod.POST],
+    allowedOrigins: ["*"],
+    allowedMethods: [HttpMethod.ALL],
     allowedHeaders: ["*"],
   },
 });
