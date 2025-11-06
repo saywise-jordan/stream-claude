@@ -57,17 +57,36 @@ export const handler = awslambda.streamifyResponse(
 
       const stream = chatClaudeStream(messages);
 
-      for await (const event of stream) {
-        console.log("Event:", event);
-        responseStream.write(`${JSON.stringify(event)}\n\n`);
+      try {
+        for await (const event of stream) {
+          console.log("Event:", event);
+          try {
+            responseStream.write(`event: ${event.type}\n`);
+            responseStream.write(`data: ${JSON.stringify(event)}\n\n`);
+          } catch (writeError) {
+            console.log("Client disconnected, aborting stream");
+            stream.abort();
+            break;
+          }
+        }
+        responseStream.end();
+      } catch (streamError) {
+        console.error("Stream error:", streamError);
+        stream.abort();
+        throw streamError;
       }
-      responseStream.end();
     } catch (error) {
-      console.error("Stream error:", error);
-      responseStream.write(
-        `data: ${JSON.stringify({ error: "Stream failed" })}\n\n`
-      );
-      responseStream.end();
+      console.error("Handler error:", error);
+      try {
+        responseStream.write(
+          `data: ${JSON.stringify({ error: "Stream failed" })}\n\n`
+        );
+        responseStream.end();
+      } catch (e) {
+        console.log(
+          "Failed to write error response, client likely disconnected"
+        );
+      }
     }
   }
 );

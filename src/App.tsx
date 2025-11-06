@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
 import amplifyOutputs from "../amplify_outputs.json";
 import { Button, Input, Card, CardBody } from "@heroui/react";
-import { Send } from "lucide-react";
+import { Send, Square } from "lucide-react";
 
 const client = generateClient<Schema>();
 
@@ -18,6 +18,7 @@ function App() {
   const [userInput, setUserInput] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [streamingMessage, setStreamingMessage] = useState<string>("");
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     client.models.Todo.observeQuery().subscribe({
@@ -52,6 +53,8 @@ function App() {
     setIsStreaming(true);
     setStreamingMessage("");
 
+    abortControllerRef.current = new AbortController();
+
     try {
       const response = await fetch(chatUrl, {
         method: "POST",
@@ -59,6 +62,7 @@ function App() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ messages: updatedMessages }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.body) {
@@ -68,24 +72,37 @@ function App() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullMessage = "";
+      let buffer = "";
 
       while (true) { // eslint-disable-line no-constant-condition
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n').filter(line => line.trim());
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || "";
+        
+        let currentEvent: { type?: string; data?: string } = {};
         
         for (const line of lines) {
-          try {
-            const event = JSON.parse(line);
-            
-            if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
-              fullMessage += event.delta.text;
-              setStreamingMessage(fullMessage);
+          if (line.trim() === "") {
+            if (currentEvent.data) {
+              try {
+                const eventData = JSON.parse(currentEvent.data);
+                
+                if (eventData.type === "content_block_delta" && eventData.delta?.type === "text_delta") {
+                  fullMessage += eventData.delta.text;
+                  setStreamingMessage(fullMessage);
+                }
+              } catch (e) {
+                console.error("Failed to parse event data:", e);
+              }
             }
-          } catch (e) {
-            console.error("Failed to parse event:", e);
+            currentEvent = {};
+          } else if (line.startsWith("event:")) {
+            currentEvent.type = line.substring(6).trim();
+          } else if (line.startsWith("data:")) {
+            currentEvent.data = line.substring(5).trim();
           }
         }
       }
@@ -98,10 +115,27 @@ function App() {
         setMessages([...updatedMessages, assistantMessage]);
       }
     } catch (error) {
-      setStreamingMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof Error && error.name === "AbortError") {
+        if (streamingMessage) {
+          const assistantMessage: Message = {
+            role: "assistant",
+            content: streamingMessage,
+          };
+          setMessages([...updatedMessages, assistantMessage]);
+        }
+      } else {
+        setStreamingMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      }
     } finally {
       setIsStreaming(false);
       setStreamingMessage("");
+      abortControllerRef.current = null;
+    }
+  }
+
+  function stopStreaming() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
   }
 
@@ -168,15 +202,26 @@ function App() {
             className="flex-1"
             size="lg"
           />
-          <Button
-            onClick={chat}
-            disabled={isStreaming || !userInput.trim()}
-            color="primary"
-            isIconOnly
-            size="lg"
-          >
-            <Send className="h-5 w-5" />
-          </Button>
+          {isStreaming ? (
+            <Button
+              onClick={stopStreaming}
+              color="danger"
+              isIconOnly
+              size="lg"
+            >
+              <Square className="h-5 w-5" />
+            </Button>
+          ) : (
+            <Button
+              onClick={chat}
+              disabled={!userInput.trim()}
+              color="primary"
+              isIconOnly
+              size="lg"
+            >
+              <Send className="h-5 w-5" />
+            </Button>
+          )}
         </div>
         {isStreaming && (
           <p className="text-sm text-gray-500 mt-2">Claude is typing...</p>
