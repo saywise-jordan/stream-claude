@@ -1,9 +1,15 @@
 import { useEffect, useState, useRef } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
+import { Amplify } from "aws-amplify";
+import { signOut, getCurrentUser } from "aws-amplify/auth";
+import { Authenticator } from "@aws-amplify/ui-react";
+import "@aws-amplify/ui-react/styles.css";
 import amplifyOutputs from "../amplify_outputs.json";
 import { Button, Input, Card, CardBody } from "@heroui/react";
-import { Send, Square } from "lucide-react";
+import { Send, Square, LogOut } from "lucide-react";
+
+Amplify.configure(amplifyOutputs);
 
 const client = generateClient<Schema>();
 
@@ -18,7 +24,14 @@ function App() {
   const [userInput, setUserInput] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [streamingMessage, setStreamingMessage] = useState<string>("");
+  const [userEmail, setUserEmail] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    getCurrentUser().then((user) => {
+      setUserEmail(user.signInDetails?.loginId || "");
+    });
+  }, []);
 
   useEffect(() => {
     client.models.Todo.observeQuery().subscribe({
@@ -146,10 +159,33 @@ function App() {
     }
   };
 
+  async function handleSignOut() {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  }
+
   return (
     <main className="min-h-screen p-8 max-w-4xl mx-auto">
+      <div className="mb-8 flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">Stream Claude</h1>
+          {userEmail && <p className="text-sm text-gray-600 mt-1">{userEmail}</p>}
+        </div>
+        <Button
+          onClick={handleSignOut}
+          color="default"
+          variant="bordered"
+          startContent={<LogOut className="h-4 w-4" />}
+        >
+          Sign Out
+        </Button>
+      </div>
+
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-4">My todos</h1>
+        <h2 className="text-2xl font-bold mb-4">My todos</h2>
         <Button onClick={createTodo} color="primary">+ new</Button>
         <ul className="mt-4 space-y-2">
           {todos.map((todo) => (
@@ -231,4 +267,10 @@ function App() {
   );
 }
 
-export default App;
+export default function AuthenticatedApp() {
+  return (
+    <Authenticator>
+      {() => <App />}
+    </Authenticator>
+  );
+}
