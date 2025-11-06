@@ -7,6 +7,7 @@ import {
   HttpMethod,
   InvokeMode,
 } from "aws-cdk-lib/aws-lambda";
+import { PolicyStatement, Effect } from "aws-cdk-lib/aws-iam";
 
 const backend = defineBackend({
   auth,
@@ -24,6 +25,14 @@ const chatFunctionUrl = chatFunctionLambda.addFunctionUrl({
     allowedHeaders: ["*"],
   },
 });
+
+backend.auth.resources.authenticatedUserIamRole.addToPrincipalPolicy(
+  new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ["lambda:InvokeFunctionUrl"],
+    resources: [chatFunctionLambda.functionArn],
+  })
+);
 
 backend.addOutput({
   custom: {

@@ -2,12 +2,15 @@ import { useEffect, useState, useRef } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
 import { Amplify } from "aws-amplify";
-import { signOut, getCurrentUser } from "aws-amplify/auth";
+import { signOut, getCurrentUser, fetchAuthSession } from "aws-amplify/auth";
 import { Authenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 import amplifyOutputs from "../amplify_outputs.json";
 import { Button, Input, Card, CardBody } from "@heroui/react";
 import { Send, Square, LogOut } from "lucide-react";
+import { SignatureV4 } from "@aws-sdk/signature-v4";
+import { HttpRequest } from "@smithy/protocol-http";
+import { Sha256 } from "@aws-crypto/sha256-js";
 
 Amplify.configure(amplifyOutputs);
 
@@ -43,6 +46,38 @@ function App() {
     client.models.Todo.create({ content: window.prompt("Todo content") });
   }
 
+  async function signRequest(url: string, body: string) {
+    const session = await fetchAuthSession();
+    const credentials = session.credentials;
+    
+    if (!credentials) {
+      throw new Error("No credentials available");
+    }
+
+    const parsedUrl = new URL(url);
+    const request = new HttpRequest({
+      method: "POST",
+      protocol: parsedUrl.protocol,
+      hostname: parsedUrl.hostname,
+      path: parsedUrl.pathname,
+      headers: {
+        "Content-Type": "application/json",
+        host: parsedUrl.hostname,
+      },
+      body,
+    });
+
+    const signer = new SignatureV4({
+      credentials,
+      region: amplifyOutputs.auth?.aws_region || "us-east-1",
+      service: "lambda",
+      sha256: Sha256,
+    });
+
+    const signedRequest = await signer.sign(request);
+    return signedRequest;
+  }
+
   async function chat() {
     if (!userInput.trim() || isStreaming) return;
 
@@ -69,12 +104,13 @@ function App() {
     abortControllerRef.current = new AbortController();
 
     try {
+      const body = JSON.stringify({ messages: updatedMessages });
+      const signedRequest = await signRequest(chatUrl, body);
+
       const response = await fetch(chatUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ messages: updatedMessages }),
+        method: signedRequest.method,
+        headers: signedRequest.headers,
+        body: signedRequest.body,
         signal: abortControllerRef.current.signal,
       });
 

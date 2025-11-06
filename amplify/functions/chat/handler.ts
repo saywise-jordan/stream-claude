@@ -16,7 +16,7 @@ function chatClaudeStream(messages: Anthropic.MessageParam[]) {
 }
 
 export const handler = awslambda.streamifyResponse(
-  async (event, responseStream) => {
+  async (event, responseStream, context) => {
     const metadata = {
       statusCode: 200,
       headers: {
@@ -33,6 +33,7 @@ export const handler = awslambda.streamifyResponse(
 
     try {
       let messages: Anthropic.MessageParam[] = [];
+      console.log("Context:", context);
 
       console.log("Event:", event);
 
