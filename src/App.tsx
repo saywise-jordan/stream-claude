@@ -1,15 +1,15 @@
 import { useEffect, useState, useRef } from "react";
-import { Amplify } from "aws-amplify";
 import { signOut, getCurrentUser, fetchAuthSession } from "aws-amplify/auth";
 import { Authenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 import amplifyOutputs from "../amplify_outputs.json";
-import { Send, Square, LogOut, MessageCircle } from "lucide-react";
+import { Send, Square, LogOut, MessageCircle, Zap, Radio } from "lucide-react";
 import { SignatureV4 } from "@aws-sdk/signature-v4";
 import { HttpRequest } from "@smithy/protocol-http";
 import { Sha256 } from "@aws-crypto/sha256-js";
+import { SubscriptionChat } from "./components/SubscriptionChat";
 
-Amplify.configure(amplifyOutputs);
+type ChatMode = "lambda" | "subscription";
 
 interface Stats {
   client: { firstTokenMs: number; endMs: number };
@@ -28,6 +28,7 @@ function App() {
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [streamingMessage, setStreamingMessage] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
+  const [chatMode, setChatMode] = useState<ChatMode>("lambda");
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -287,169 +288,204 @@ function App() {
             <span className="hidden sm:inline">Sign Out</span>
           </button>
         </div>
+        <div className="max-w-3xl mx-auto px-4 pb-3">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setChatMode("lambda")}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                chatMode === "lambda"
+                  ? "bg-orange-100 text-orange-700"
+                  : "text-slate-500 hover:bg-slate-100"
+              }`}
+            >
+              <Zap className="w-4 h-4" />
+              Lambda Stream
+            </button>
+            <button
+              onClick={() => setChatMode("subscription")}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                chatMode === "subscription"
+                  ? "bg-violet-100 text-violet-700"
+                  : "text-slate-500 hover:bg-slate-100"
+              }`}
+            >
+              <Radio className="w-4 h-4" />
+              AppSync Subscription
+            </button>
+          </div>
+        </div>
       </header>
 
       <main className="flex-1 overflow-hidden max-w-3xl w-full mx-auto flex flex-col">
-        <div className="flex-1 overflow-y-auto px-4 py-6">
-          {messages.length === 0 && !streamingMessage ? (
-            <div className="h-full flex items-center justify-center">
-              <div className="text-center max-w-md">
-                <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center shadow-lg">
-                  <MessageCircle className="w-10 h-10 text-white" />
-                </div>
-                <h2 className="text-2xl font-semibold text-slate-800 mb-2">
-                  How can I help you today?
-                </h2>
-                <p className="text-slate-500">
-                  Start a conversation with Claude. Ask questions, get help with
-                  writing, or explore ideas together.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {messages.map((message, index) => (
-                <div key={index}>
-                  <div
-                    className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""}`}
-                  >
-                    <div
-                      className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium ${
-                        message.role === "user"
-                          ? "bg-slate-700 text-white"
-                          : "bg-gradient-to-br from-orange-400 to-amber-500 text-white"
-                      }`}
-                    >
-                      {message.role === "user" ? "You" : "C"}
+        {chatMode === "subscription" ? (
+          <SubscriptionChat />
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto px-4 py-6">
+              {messages.length === 0 && !streamingMessage ? (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-center max-w-md">
+                    <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center shadow-lg">
+                      <MessageCircle className="w-10 h-10 text-white" />
                     </div>
-                    <div
-                      className={`max-w-[85%] px-4 py-3 rounded-2xl ${
-                        message.role === "user"
-                          ? "bg-slate-700 text-white rounded-tr-md"
-                          : "bg-white text-slate-800 shadow-sm border border-slate-200 rounded-tl-md"
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap leading-relaxed">
-                        {message.content}
-                      </p>
-                    </div>
-                  </div>
-                  {message.stats && (
-                    <div className="ml-11 mt-1 flex items-center gap-3 text-[10px] text-slate-400">
-                      <span>
-                        TTFT{" "}
-                        <span className="text-slate-500">
-                          {message.stats.client.firstTokenMs}ms
-                        </span>
-                      </span>
-                      <span>
-                        Server{" "}
-                        <span className="text-slate-500">
-                          {message.stats.server.firstTokenMs}ms
-                        </span>
-                      </span>
-                      <span>
-                        Network{" "}
-                        <span className="text-slate-500">
-                          +
-                          {message.stats.client.firstTokenMs -
-                            message.stats.server.firstTokenMs}
-                          ms
-                        </span>
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {streamingMessage && (
-                <div className="flex gap-3">
-                  <div className="shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-sm font-medium text-white">
-                    C
-                  </div>
-                  <div className="max-w-[85%] px-4 py-3 rounded-2xl rounded-tl-md bg-white text-slate-800 shadow-sm border border-slate-200">
-                    <p className="whitespace-pre-wrap leading-relaxed">
-                      {streamingMessage}
-                      <span className="inline-block w-2 h-5 ml-1 bg-orange-400 animate-pulse rounded-sm align-middle" />
+                    <h2 className="text-2xl font-semibold text-slate-800 mb-2">
+                      How can I help you today?
+                    </h2>
+                    <p className="text-slate-500">
+                      Start a conversation with Claude. Ask questions, get help
+                      with writing, or explore ideas together.
                     </p>
                   </div>
                 </div>
+              ) : (
+                <div className="space-y-6">
+                  {messages.map((message, index) => (
+                    <div key={index}>
+                      <div
+                        className={`flex gap-3 ${
+                          message.role === "user" ? "flex-row-reverse" : ""
+                        }`}
+                      >
+                        <div
+                          className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium ${
+                            message.role === "user"
+                              ? "bg-slate-700 text-white"
+                              : "bg-gradient-to-br from-orange-400 to-amber-500 text-white"
+                          }`}
+                        >
+                          {message.role === "user" ? "You" : "C"}
+                        </div>
+                        <div
+                          className={`max-w-[85%] px-4 py-3 rounded-2xl ${
+                            message.role === "user"
+                              ? "bg-slate-700 text-white rounded-tr-md"
+                              : "bg-white text-slate-800 shadow-sm border border-slate-200 rounded-tl-md"
+                          }`}
+                        >
+                          <p className="whitespace-pre-wrap leading-relaxed">
+                            {message.content}
+                          </p>
+                        </div>
+                      </div>
+                      {message.stats && (
+                        <div className="ml-11 mt-1 flex items-center gap-3 text-[10px] text-slate-400">
+                          <span>
+                            TTFT{" "}
+                            <span className="text-slate-500">
+                              {message.stats.client.firstTokenMs}ms
+                            </span>
+                          </span>
+                          <span>
+                            Server{" "}
+                            <span className="text-slate-500">
+                              {message.stats.server.firstTokenMs}ms
+                            </span>
+                          </span>
+                          <span>
+                            Network{" "}
+                            <span className="text-slate-500">
+                              +
+                              {message.stats.client.firstTokenMs -
+                                message.stats.server.firstTokenMs}
+                              ms
+                            </span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {streamingMessage && (
+                    <div className="flex gap-3">
+                      <div className="shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-sm font-medium text-white">
+                        C
+                      </div>
+                      <div className="max-w-[85%] px-4 py-3 rounded-2xl rounded-tl-md bg-white text-slate-800 shadow-sm border border-slate-200">
+                        <p className="whitespace-pre-wrap leading-relaxed">
+                          {streamingMessage}
+                          <span className="inline-block w-2 h-5 ml-1 bg-orange-400 animate-pulse rounded-sm align-middle" />
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
               )}
-              <div ref={messagesEndRef} />
             </div>
-          )}
-        </div>
 
-        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-4">
-          {summarizedStats && (
-            <div className="mb-3 flex items-center justify-center gap-4 text-xs text-slate-500">
-              <span className="text-slate-400">
-                {summarizedStats.count} message
-                {summarizedStats.count > 1 ? "s" : ""}
-              </span>
-              <div className="w-px h-3 bg-slate-200" />
-              <span>
-                Avg TTFT{" "}
-                <span className="font-mono text-slate-700">
-                  {summarizedStats.avgClientTTFT}ms
-                </span>
-              </span>
-              <div className="w-px h-3 bg-slate-200" />
-              <span>
-                Avg Server{" "}
-                <span className="font-mono text-slate-700">
-                  {summarizedStats.avgServerTTFT}ms
-                </span>
-              </span>
-              <div className="w-px h-3 bg-slate-200" />
-              <span>
-                Network{" "}
-                <span className="font-mono text-slate-700">
-                  +{summarizedStats.avgNetwork}ms
-                </span>
-                {summarizedStats.count > 1 && (
+            <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-4">
+              {summarizedStats && (
+                <div className="mb-3 flex items-center justify-center gap-4 text-xs text-slate-500">
                   <span className="text-slate-400">
-                    {" "}
-                    (min {summarizedStats.minNetwork}, max{" "}
-                    {summarizedStats.maxNetwork}, p99 {summarizedStats.p99Network}
-                    ms)
+                    {summarizedStats.count} message
+                    {summarizedStats.count > 1 ? "s" : ""}
                   </span>
+                  <div className="w-px h-3 bg-slate-200" />
+                  <span>
+                    Avg TTFT{" "}
+                    <span className="font-mono text-slate-700">
+                      {summarizedStats.avgClientTTFT}ms
+                    </span>
+                  </span>
+                  <div className="w-px h-3 bg-slate-200" />
+                  <span>
+                    Avg Server{" "}
+                    <span className="font-mono text-slate-700">
+                      {summarizedStats.avgServerTTFT}ms
+                    </span>
+                  </span>
+                  <div className="w-px h-3 bg-slate-200" />
+                  <span>
+                    Network{" "}
+                    <span className="font-mono text-slate-700">
+                      +{summarizedStats.avgNetwork}ms
+                    </span>
+                    {summarizedStats.count > 1 && (
+                      <span className="text-slate-400">
+                        {" "}
+                        (min {summarizedStats.minNetwork}, max{" "}
+                        {summarizedStats.maxNetwork}, p99{" "}
+                        {summarizedStats.p99Network}
+                        ms)
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
+              <div className="flex gap-3 items-center">
+                <input
+                  type="text"
+                  value={userInput}
+                  onChange={(e) => setUserInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      chat();
+                    }
+                  }}
+                  placeholder="Message Claude..."
+                  disabled={isStreaming}
+                  className="flex-1 px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                />
+                {isStreaming ? (
+                  <button
+                    onClick={stopStreaming}
+                    className="shrink-0 w-12 h-12 flex items-center justify-center rounded-xl bg-red-500 hover:bg-red-600 text-white transition-colors"
+                  >
+                    <Square className="w-5 h-5" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={chat}
+                    disabled={!userInput.trim()}
+                    className="shrink-0 w-12 h-12 flex items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 hover:from-orange-500 hover:to-amber-600 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                  >
+                    <Send className="w-5 h-5" />
+                  </button>
                 )}
-              </span>
+              </div>
             </div>
-          )}
-          <div className="flex gap-3 items-center">
-            <input
-              type="text"
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  chat();
-                }
-              }}
-              placeholder="Message Claude..."
-              disabled={isStreaming}
-              className="flex-1 px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            />
-            {isStreaming ? (
-              <button
-                onClick={stopStreaming}
-                className="shrink-0 w-12 h-12 flex items-center justify-center rounded-xl bg-red-500 hover:bg-red-600 text-white transition-colors"
-              >
-                <Square className="w-5 h-5" />
-              </button>
-            ) : (
-              <button
-                onClick={chat}
-                disabled={!userInput.trim()}
-                className="shrink-0 w-12 h-12 flex items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 hover:from-orange-500 hover:to-amber-600 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
-              >
-                <Send className="w-5 h-5" />
-              </button>
-            )}
-          </div>
-        </div>
+          </>
+        )}
       </main>
     </div>
   );
