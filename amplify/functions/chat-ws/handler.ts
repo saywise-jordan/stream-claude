@@ -11,6 +11,8 @@ const anthropicClient = new Anthropic({
   apiKey: process.env["ANTHROPIC_API_KEY"],
 });
 
+console.log("Anthropic client initialized");
+
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(
   env
 );
@@ -20,6 +22,8 @@ Amplify.configure(resourceConfig, libraryOptions);
 const client = generateClient<Schema>({
   authMode: "iam",
 });
+
+console.log("Amplify data client configured");
 
 export const handler: Schema["chat"]["functionHandler"] = async (event) => {
   console.log("Event", event);
@@ -68,7 +72,7 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
       event.delta?.type === "text_delta"
     ) {
       fullMessage += event.delta.text;
-      if (!ttftMs) {
+      if (!ttftMs && event.delta.text) {
         ttftMs = Date.now() - startMs;
       }
       await client.models.ChatMessage.update({

@@ -124,8 +124,7 @@ export function SubscriptionChat() {
 
         let clientTtft: number | undefined;
         const hasContent =
-          updatedMessage.content &&
-          updatedMessage.content !== "Thinking...";
+          updatedMessage.content && updatedMessage.content !== "Thinking...";
         if (!firstUpdateReceivedRef.current && hasContent) {
           firstUpdateReceivedRef.current = true;
           clientTtft = Date.now() - startTimeRef.current;
@@ -177,7 +176,8 @@ export function SubscriptionChat() {
 
   const summarizedStats = (() => {
     const messagesWithStats = messages.filter(
-      (m) => m.role === "assistant" && m.isComplete && m.clientTtftMs !== undefined
+      (m) =>
+        m.role === "assistant" && m.isComplete && m.clientTtftMs !== undefined
     );
     if (messagesWithStats.length === 0) return null;
 
@@ -271,19 +271,15 @@ export function SubscriptionChat() {
                       </span>
                       <span>
                         Server{" "}
-                        <span className="text-slate-500">{message.ttftMs}ms</span>
+                        <span className="text-slate-500">
+                          {message.ttftMs}ms
+                        </span>
                       </span>
                       <span>
                         Network{" "}
                         <span className="text-slate-500">
-                          +
-                          {(message.clientTtftMs ?? 0) - (message.ttftMs ?? 0)}ms
-                        </span>
-                      </span>
-                      <span>
-                        Completion{" "}
-                        <span className="text-slate-500">
-                          {message.completionMs}ms
+                          +{(message.clientTtftMs ?? 0) - (message.ttftMs ?? 0)}
+                          ms
                         </span>
                       </span>
                     </div>

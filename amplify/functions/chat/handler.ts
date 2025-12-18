@@ -59,7 +59,7 @@ export const handler = awslambda.streamifyResponse(
         return;
       }
 
-      console.log("messages:", messages);
+      console.log("messages:", messages.length);
 
       const start = new Date();
       let firstTokenMs = 0;
@@ -70,7 +70,8 @@ export const handler = awslambda.streamifyResponse(
           if (
             !firstTokenMs &&
             event.type === "content_block_delta" &&
-            event.delta?.type === "text_delta"
+            event.delta?.type === "text_delta" &&
+            event.delta.text
           ) {
             firstTokenMs = new Date().getTime() - start.getTime();
             console.log("First token received in", firstTokenMs, "ms");
