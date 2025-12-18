@@ -25,6 +25,8 @@ const schema = a
         tokenCount: a.integer(),
         createdAt: a.datetime(),
         updatedAt: a.datetime(),
+        ttftMs: a.integer(),
+        completionMs: a.integer(),
       })
       .authorization((allow) => [
         allow.owner(),

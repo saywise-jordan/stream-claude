@@ -42,6 +42,9 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
   const agentPendingMessageId = agentPendingMessage.data?.id;
 
   console.log("Starting agent response", agentPendingMessageId);
+  const startMs = Date.now();
+  let ttftMs = 0;
+  let completionMs = 0;
 
   const stream = anthropicClient.messages.stream({
     model: "claude-sonnet-4-5-20250929",
@@ -63,6 +66,9 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
       event.delta?.type === "text_delta"
     ) {
       fullMessage += event.delta.text;
+      if (!ttftMs) {
+        ttftMs = Date.now() - startMs;
+      }
       await client.models.ChatMessage.update({
         id: agentPendingMessageId,
         content: fullMessage,
@@ -70,12 +76,14 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
     }
   }
 
+  completionMs = Date.now() - startMs;
   const updated = await client.models.ChatMessage.update({
     id: agentPendingMessageId,
-    content: fullMessage,
     isStreaming: false,
     isComplete: true,
     tokenCount: fullMessage.length,
+    ttftMs: ttftMs,
+    completionMs: completionMs,
   });
 
   console.log("Agent response complete", agentPendingMessageId);
