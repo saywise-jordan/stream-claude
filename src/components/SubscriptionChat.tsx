@@ -175,6 +175,38 @@ export function SubscriptionChat() {
     setMessages([]);
   }
 
+  const summarizedStats = (() => {
+    const messagesWithStats = messages.filter(
+      (m) => m.role === "assistant" && m.isComplete && m.clientTtftMs !== undefined
+    );
+    if (messagesWithStats.length === 0) return null;
+
+    const clientTTFTs = messagesWithStats.map((m) => m.clientTtftMs || 0);
+    const serverTTFTs = messagesWithStats.map((m) => m.ttftMs || 0);
+    const networkOverheads = messagesWithStats.map(
+      (m) => (m.clientTtftMs || 0) - (m.ttftMs || 0)
+    );
+
+    const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
+    const avg = (arr: number[]) => Math.round(sum(arr) / arr.length);
+    const percentile = (arr: number[], p: number) => {
+      const sorted = [...arr].sort((a, b) => a - b);
+      const index = Math.ceil((p / 100) * sorted.length) - 1;
+      return sorted[Math.max(0, index)];
+    };
+
+    const count = messagesWithStats.length;
+    return {
+      count,
+      avgClientTTFT: avg(clientTTFTs),
+      avgServerTTFT: avg(serverTTFTs),
+      avgNetwork: avg(networkOverheads),
+      minNetwork: Math.min(...networkOverheads),
+      maxNetwork: Math.max(...networkOverheads),
+      p99Network: percentile(networkOverheads, 99),
+    };
+  })();
+
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
       <div className="flex-1 overflow-y-auto px-4 py-6">
@@ -264,8 +296,45 @@ export function SubscriptionChat() {
       </div>
 
       <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-4">
-        {sessionId && (
+        {summarizedStats && (
           <div className="mb-3 flex items-center justify-center gap-4 text-xs text-slate-500">
+            <span className="text-slate-400">
+              {summarizedStats.count} message
+              {summarizedStats.count > 1 ? "s" : ""}
+            </span>
+            <div className="w-px h-3 bg-slate-200" />
+            <span>
+              Avg TTFT{" "}
+              <span className="font-mono text-slate-700">
+                {summarizedStats.avgClientTTFT}ms
+              </span>
+            </span>
+            <div className="w-px h-3 bg-slate-200" />
+            <span>
+              Avg Server{" "}
+              <span className="font-mono text-slate-700">
+                {summarizedStats.avgServerTTFT}ms
+              </span>
+            </span>
+            <div className="w-px h-3 bg-slate-200" />
+            <span>
+              Network{" "}
+              <span className="font-mono text-slate-700">
+                +{summarizedStats.avgNetwork}ms
+              </span>
+              {summarizedStats.count > 1 && (
+                <span className="text-slate-400">
+                  {" "}
+                  (min {summarizedStats.minNetwork}, max{" "}
+                  {summarizedStats.maxNetwork}, p99 {summarizedStats.p99Network}
+                  ms)
+                </span>
+              )}
+            </span>
+          </div>
+        )}
+        {sessionId && (
+          <div className="mb-3 flex items-center justify-center gap-4 text-xs text-slate-500 hidden">
             <span>Session: {sessionId.slice(0, 8)}...</span>
             <button
               onClick={startNewSession}

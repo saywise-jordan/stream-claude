@@ -200,7 +200,7 @@ function App() {
                   eventData.type === "content_block_delta" &&
                   eventData.delta?.type === "text_delta"
                 ) {
-                  if (clientStats.firstTokenMs === 0 && eventData.delta.text) {
+                  if (clientStats.firstTokenMs === 0) {
                     clientStats.firstTokenMs =
                       new Date().getTime() - start.getTime();
                   }
@@ -317,9 +317,10 @@ function App() {
       </header>
 
       <main className="flex-1 overflow-hidden max-w-3xl w-full mx-auto flex flex-col">
-        {chatMode === "subscription" ? (
+        <div className={chatMode === "subscription" ? "flex-1 flex flex-col overflow-hidden" : "hidden"}>
           <SubscriptionChat />
-        ) : (
+        </div>
+        <div className={chatMode === "lambda" ? "contents" : "hidden"}>
           <>
             <div className="flex-1 overflow-y-auto px-4 py-6">
               {messages.length === 0 && !streamingMessage ? (
@@ -485,7 +486,7 @@ function App() {
               </div>
             </div>
           </>
-        )}
+        </div>
       </main>
     </div>
   );
