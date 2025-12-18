@@ -13,6 +13,9 @@ interface Message {
   content: string;
   isStreaming?: boolean;
   isComplete?: boolean;
+  ttftMs?: number;
+  completionMs?: number;
+  clientTtftMs?: number;
 }
 
 const client = generateClient<Schema>({
@@ -27,8 +30,8 @@ export function SubscriptionChat() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const createSubRef = useRef<{ unsubscribe: () => void } | null>(null);
   const updateSubRef = useRef<{ unsubscribe: () => void } | null>(null);
-  const startMsRef = useRef(0);
-  const endMsRef = useRef(0);
+  const startTimeRef = useRef<number>(0);
+  const firstUpdateReceivedRef = useRef<boolean>(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -75,8 +78,9 @@ export function SubscriptionChat() {
 
       subscribeToMessage(messageId);
 
-      startMsRef.current = Date.now();
-      endMsRef.current = 0;
+      startTimeRef.current = Date.now();
+      firstUpdateReceivedRef.current = false;
+
       const { errors } = await client.mutations.chat({
         sessionId: sessionId,
         messageId: messageId,
@@ -114,9 +118,14 @@ export function SubscriptionChat() {
       next: (updatedMessage) => {
         console.log("Message updated:", updatedMessage);
         if (!updatedMessage) return;
-        if (!endMsRef.current) {
-          endMsRef.current = Date.now();
-          console.log("TTFT:", endMsRef.current - startMsRef.current);
+
+        let clientTtft: number | undefined;
+        const hasContent =
+          updatedMessage.content &&
+          updatedMessage.content !== "Thinking...";
+        if (!firstUpdateReceivedRef.current && hasContent) {
+          firstUpdateReceivedRef.current = true;
+          clientTtft = Date.now() - startTimeRef.current;
         }
 
         setMessages((prev) =>
@@ -127,6 +136,9 @@ export function SubscriptionChat() {
                   content: updatedMessage.content,
                   isStreaming: updatedMessage.isStreaming || false,
                   isComplete: updatedMessage.isComplete || false,
+                  ttftMs: updatedMessage.ttftMs ?? msg.ttftMs,
+                  completionMs: updatedMessage.completionMs ?? msg.completionMs,
+                  clientTtftMs: clientTtft ?? msg.clientTtftMs,
                 }
               : msg
           )
@@ -212,6 +224,35 @@ export function SubscriptionChat() {
                     </p>
                   </div>
                 </div>
+                {message.role === "assistant" &&
+                  message.isComplete &&
+                  message.ttftMs !== undefined && (
+                    <div className="ml-11 mt-1 flex items-center gap-3 text-[10px] text-slate-400">
+                      <span>
+                        TTFT{" "}
+                        <span className="text-slate-500">
+                          {message.clientTtftMs}ms
+                        </span>
+                      </span>
+                      <span>
+                        Server{" "}
+                        <span className="text-slate-500">{message.ttftMs}ms</span>
+                      </span>
+                      <span>
+                        Network{" "}
+                        <span className="text-slate-500">
+                          +
+                          {(message.clientTtftMs ?? 0) - (message.ttftMs ?? 0)}ms
+                        </span>
+                      </span>
+                      <span>
+                        Completion{" "}
+                        <span className="text-slate-500">
+                          {message.completionMs}ms
+                        </span>
+                      </span>
+                    </div>
+                  )}
               </div>
             ))}
             <div ref={messagesEndRef} />

@@ -200,7 +200,7 @@ function App() {
                   eventData.type === "content_block_delta" &&
                   eventData.delta?.type === "text_delta"
                 ) {
-                  if (clientStats.firstTokenMs === 0) {
+                  if (clientStats.firstTokenMs === 0 && eventData.delta.text) {
                     clientStats.firstTokenMs =
                       new Date().getTime() - start.getTime();
                   }
