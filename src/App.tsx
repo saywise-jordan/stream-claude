@@ -1,20 +1,15 @@
 import { useEffect, useState, useRef } from "react";
-import type { Schema } from "../amplify/data/resource";
-import { generateClient } from "aws-amplify/data";
 import { Amplify } from "aws-amplify";
 import { signOut, getCurrentUser, fetchAuthSession } from "aws-amplify/auth";
 import { Authenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 import amplifyOutputs from "../amplify_outputs.json";
-import { Button, Input, Card, CardBody } from "@heroui/react";
-import { Send, Square, LogOut } from "lucide-react";
+import { Send, Square, LogOut, MessageCircle } from "lucide-react";
 import { SignatureV4 } from "@aws-sdk/signature-v4";
 import { HttpRequest } from "@smithy/protocol-http";
 import { Sha256 } from "@aws-crypto/sha256-js";
 
 Amplify.configure(amplifyOutputs);
-
-const client = generateClient<Schema>();
 
 interface Message {
   role: "user" | "assistant";
@@ -22,13 +17,13 @@ interface Message {
 }
 
 function App() {
-  const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [userInput, setUserInput] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [streamingMessage, setStreamingMessage] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     getCurrentUser().then((user) => {
@@ -37,14 +32,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    client.models.Todo.observeQuery().subscribe({
-      next: (data) => setTodos([...data.items]),
-    });
-  }, []);
-
-  function createTodo() {
-    client.models.Todo.create({ content: window.prompt("Todo content") });
-  }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streamingMessage]);
 
   async function signRequest(url: string, body: string) {
     const session = await fetchAuthSession();
@@ -241,105 +230,132 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen p-8 max-w-4xl mx-auto">
-      <div className="mb-8 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Stream Claude</h1>
-          {userEmail && (
-            <p className="text-sm text-gray-600 mt-1">{userEmail}</p>
-          )}
-        </div>
-        <Button
-          onClick={handleSignOut}
-          color="default"
-          variant="bordered"
-          startContent={<LogOut className="h-4 w-4" />}
-        >
-          Sign Out
-        </Button>
-      </div>
-
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold mb-4">My todos</h2>
-        <Button onClick={createTodo} color="primary">
-          + new
-        </Button>
-        <ul className="mt-4 space-y-2">
-          {todos.map((todo) => (
-            <li key={todo.id} className="p-2 bg-gray-100 rounded">
-              {todo.content}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="mt-8">
-        <h2 className="text-2xl font-bold mb-4">Chat with Claude</h2>
-
-        <Card className="mb-4">
-          <CardBody>
-            <div className="min-h-[200px] max-h-[500px] overflow-y-auto space-y-4">
-              {messages.length === 0 && !streamingMessage && (
-                <p className="text-gray-500">
-                  Type a message to start chatting...
-                </p>
+    <div className="flex flex-col h-screen bg-slate-50">
+      <header className="shrink-0 border-b border-slate-200 bg-white">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center shadow-sm">
+              <MessageCircle className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-slate-800">
+                Stream Claude
+              </h1>
+              {userEmail && (
+                <p className="text-xs text-slate-400">{userEmail}</p>
               )}
+            </div>
+          </div>
+          <button
+            onClick={handleSignOut}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline">Sign Out</span>
+          </button>
+        </div>
+      </header>
+
+      <main className="flex-1 overflow-hidden max-w-3xl w-full mx-auto flex flex-col">
+        <div className="flex-1 overflow-y-auto px-4 py-6">
+          {messages.length === 0 && !streamingMessage ? (
+            <div className="h-full flex items-center justify-center">
+              <div className="text-center max-w-md">
+                <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center shadow-lg">
+                  <MessageCircle className="w-10 h-10 text-white" />
+                </div>
+                <h2 className="text-2xl font-semibold text-slate-800 mb-2">
+                  How can I help you today?
+                </h2>
+                <p className="text-slate-500">
+                  Start a conversation with Claude. Ask questions, get help with
+                  writing, or explore ideas together.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
               {messages.map((message, index) => (
                 <div
                   key={index}
-                  className={`p-3 rounded-lg ${
-                    message.role === "user"
-                      ? "bg-blue-100 ml-8"
-                      : "bg-gray-100 mr-8"
-                  }`}
+                  className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""}`}
                 >
-                  <p className="font-semibold text-sm mb-1">
-                    {message.role === "user" ? "You" : "Claude"}
-                  </p>
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  <div
+                    className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium ${
+                      message.role === "user"
+                        ? "bg-slate-700 text-white"
+                        : "bg-gradient-to-br from-orange-400 to-amber-500 text-white"
+                    }`}
+                  >
+                    {message.role === "user" ? "You" : "C"}
+                  </div>
+                  <div
+                    className={`max-w-[85%] px-4 py-3 rounded-2xl ${
+                      message.role === "user"
+                        ? "bg-slate-700 text-white rounded-tr-md"
+                        : "bg-white text-slate-800 shadow-sm border border-slate-200 rounded-tl-md"
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap leading-relaxed">
+                      {message.content}
+                    </p>
+                  </div>
                 </div>
               ))}
               {streamingMessage && (
-                <div className="p-3 rounded-lg bg-gray-100 mr-8">
-                  <p className="font-semibold text-sm mb-1">Claude</p>
-                  <p className="whitespace-pre-wrap">{streamingMessage}</p>
+                <div className="flex gap-3">
+                  <div className="shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-sm font-medium text-white">
+                    C
+                  </div>
+                  <div className="max-w-[85%] px-4 py-3 rounded-2xl rounded-tl-md bg-white text-slate-800 shadow-sm border border-slate-200">
+                    <p className="whitespace-pre-wrap leading-relaxed">
+                      {streamingMessage}
+                      <span className="inline-block w-2 h-5 ml-1 bg-orange-400 animate-pulse rounded-sm align-middle" />
+                    </p>
+                  </div>
                 </div>
               )}
+              <div ref={messagesEndRef} />
             </div>
-          </CardBody>
-        </Card>
-
-        <div className="flex gap-2">
-          <Input
-            value={userInput}
-            onChange={(e) => setUserInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type your message..."
-            disabled={isStreaming}
-            className="flex-1"
-            size="lg"
-          />
-          {isStreaming ? (
-            <Button onClick={stopStreaming} color="danger" isIconOnly size="lg">
-              <Square className="h-5 w-5" />
-            </Button>
-          ) : (
-            <Button
-              onClick={chat}
-              disabled={!userInput.trim()}
-              color="primary"
-              isIconOnly
-              size="lg"
-            >
-              <Send className="h-5 w-5" />
-            </Button>
           )}
         </div>
-        {isStreaming && (
-          <p className="text-sm text-gray-500 mt-2">Claude is typing...</p>
-        )}
-      </div>
-    </main>
+
+        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-4">
+          <div className="flex gap-3 items-center">
+            <input
+              type="text"
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  chat();
+                }
+              }}
+              placeholder="Message Claude..."
+              disabled={isStreaming}
+              className="flex-1 px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            />
+            {isStreaming ? (
+              <button
+                onClick={stopStreaming}
+                className="shrink-0 w-12 h-12 flex items-center justify-center rounded-xl bg-red-500 hover:bg-red-600 text-white transition-colors"
+              >
+                <Square className="w-5 h-5" />
+              </button>
+            ) : (
+              <button
+                onClick={chat}
+                disabled={!userInput.trim()}
+                className="shrink-0 w-12 h-12 flex items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 to-amber-500 hover:from-orange-500 hover:to-amber-600 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+              >
+                <Send className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
   );
 }
 
