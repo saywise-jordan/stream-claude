@@ -1,18 +1,47 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
+import { chatWs } from "../functions/chat-ws/resource";
 
-/*== STEP 1 ===============================================================
-The section below creates a Todo database table with a "content" field. Try
-adding a new "isDone" field as a boolean. The authorization rule below
-specifies that any user authenticated via an API key can "create", "read",
-"update", and "delete" any "Todo" records.
+/*== CHAT STREAMING MODEL =================================================
+This schema supports real-time streaming chat messages via AppSync subscriptions.
+Messages can be updated incrementally as content arrives from the AI.
 =========================================================================*/
-const schema = a.schema({
-  Todo: a
-    .model({
-      content: a.string(),
-    })
-    .authorization((allow) => [allow.publicApiKey()]),
-});
+const schema = a
+  .schema({
+    ChatSession: a
+      .model({
+        title: a.string(),
+        createdAt: a.datetime(),
+        messages: a.hasMany("ChatMessage", "sessionId"),
+      })
+      .authorization((allow) => [allow.owner()]),
+    ChatMessage: a
+      .model({
+        sessionId: a.string().required(),
+        session: a.belongsTo("ChatSession", "sessionId"),
+        role: a.enum(["user", "assistant", "system"]),
+        content: a.string().required(),
+        isStreaming: a.boolean().default(false),
+        isComplete: a.boolean().default(false),
+        tokenCount: a.integer(),
+        createdAt: a.datetime(),
+        updatedAt: a.datetime(),
+      })
+      .authorization((allow) => [allow.owner()]),
+    Todo: a
+      .model({
+        content: a.string(),
+      })
+      .authorization((allow) => [allow.owner()]),
+    chat: a
+      .mutation()
+      .arguments({
+        sessionId: a.id(),
+        message: a.string().required(),
+      })
+      .returns(a.boolean())
+      .authorization((allow) => [allow.authenticated()]),
+  })
+  .authorization((allow) => [allow.resource(chatWs)]);
 
 export type Schema = ClientSchema<typeof schema>;
 
