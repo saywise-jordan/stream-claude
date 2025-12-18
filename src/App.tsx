@@ -49,7 +49,7 @@ function App() {
   async function signRequest(url: string, body: string) {
     const session = await fetchAuthSession();
     const credentials = session.credentials;
-    
+
     if (!credentials) {
       throw new Error("No credentials available");
     }
@@ -83,18 +83,20 @@ function App() {
 
     const chatUrl = amplifyOutputs.custom?.chatUrl;
     if (!chatUrl) {
-      setStreamingMessage("Error: Function URL not found in amplify_outputs.json");
+      setStreamingMessage(
+        "Error: Function URL not found in amplify_outputs.json"
+      );
       return;
     }
 
     const messageToSend = userInput;
     setUserInput("");
-    
+
     const newUserMessage: Message = {
       role: "user",
       content: messageToSend,
     };
-    
+
     const updatedMessages = [...messages, newUserMessage];
     setMessages(updatedMessages);
 
@@ -107,6 +109,8 @@ function App() {
       const body = JSON.stringify({ messages: updatedMessages });
       const signedRequest = await signRequest(chatUrl, body);
 
+      const start = new Date();
+      let firstToken: Date | null = null;
       const response = await fetch(chatUrl, {
         method: signedRequest.method,
         headers: signedRequest.headers,
@@ -123,25 +127,37 @@ function App() {
       let fullMessage = "";
       let buffer = "";
 
-      while (true) { // eslint-disable-line no-constant-condition
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
+        const lines = buffer.split("\n");
         buffer = lines.pop() || "";
-        
+
         let currentEvent: { type?: string; data?: string } = {};
-        
+
         for (const line of lines) {
           if (line.trim() === "") {
             if (currentEvent.data) {
               try {
                 const eventData = JSON.parse(currentEvent.data);
-                
-                if (eventData.type === "content_block_delta" && eventData.delta?.type === "text_delta") {
+
+                if (
+                  eventData.type === "content_block_delta" &&
+                  eventData.delta?.type === "text_delta"
+                ) {
                   fullMessage += eventData.delta.text;
                   setStreamingMessage(fullMessage);
+                  if (!firstToken) {
+                    firstToken = new Date();
+                    console.log(
+                      "First token received in",
+                      firstToken.getTime() - start.getTime(),
+                      "ms"
+                    );
+                  }
                 }
               } catch (e) {
                 console.error("Failed to parse event data:", e);
@@ -173,7 +189,9 @@ function App() {
           setMessages([...updatedMessages, assistantMessage]);
         }
       } else {
-        setStreamingMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
+        setStreamingMessage(
+          `Error: ${error instanceof Error ? error.message : String(error)}`
+        );
       }
     } finally {
       setIsStreaming(false);
@@ -189,7 +207,7 @@ function App() {
   }
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       chat();
     }
@@ -208,7 +226,9 @@ function App() {
       <div className="mb-8 flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Stream Claude</h1>
-          {userEmail && <p className="text-sm text-gray-600 mt-1">{userEmail}</p>}
+          {userEmail && (
+            <p className="text-sm text-gray-600 mt-1">{userEmail}</p>
+          )}
         </div>
         <Button
           onClick={handleSignOut}
@@ -222,22 +242,28 @@ function App() {
 
       <div className="mb-8">
         <h2 className="text-2xl font-bold mb-4">My todos</h2>
-        <Button onClick={createTodo} color="primary">+ new</Button>
+        <Button onClick={createTodo} color="primary">
+          + new
+        </Button>
         <ul className="mt-4 space-y-2">
           {todos.map((todo) => (
-            <li key={todo.id} className="p-2 bg-gray-100 rounded">{todo.content}</li>
+            <li key={todo.id} className="p-2 bg-gray-100 rounded">
+              {todo.content}
+            </li>
           ))}
         </ul>
       </div>
 
       <div className="mt-8">
         <h2 className="text-2xl font-bold mb-4">Chat with Claude</h2>
-        
+
         <Card className="mb-4">
           <CardBody>
             <div className="min-h-[200px] max-h-[500px] overflow-y-auto space-y-4">
               {messages.length === 0 && !streamingMessage && (
-                <p className="text-gray-500">Type a message to start chatting...</p>
+                <p className="text-gray-500">
+                  Type a message to start chatting...
+                </p>
               )}
               {messages.map((message, index) => (
                 <div
@@ -275,12 +301,7 @@ function App() {
             size="lg"
           />
           {isStreaming ? (
-            <Button
-              onClick={stopStreaming}
-              color="danger"
-              isIconOnly
-              size="lg"
-            >
+            <Button onClick={stopStreaming} color="danger" isIconOnly size="lg">
               <Square className="h-5 w-5" />
             </Button>
           ) : (
@@ -304,9 +325,5 @@ function App() {
 }
 
 export default function AuthenticatedApp() {
-  return (
-    <Authenticator>
-      {() => <App />}
-    </Authenticator>
-  );
+  return <Authenticator>{() => <App />}</Authenticator>;
 }

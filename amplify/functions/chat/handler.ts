@@ -62,22 +62,18 @@ export const handler = awslambda.streamifyResponse(
       console.log("messages:", messages);
 
       const start = new Date();
-      let firstToken: Date | null = null;
+      let firstTokenMs = 0;
       const stream = chatClaudeStream(messages);
 
       try {
         for await (const event of stream) {
           if (
-            !firstToken &&
+            !firstTokenMs &&
             event.type === "content_block_delta" &&
             event.delta?.type === "text_delta"
           ) {
-            firstToken = new Date();
-            console.log(
-              "First token received in",
-              firstToken.getTime() - start.getTime(),
-              "ms"
-            );
+            firstTokenMs = new Date().getTime() - start.getTime();
+            console.log("First token received in", firstTokenMs, "ms");
           }
           try {
             responseStream.write(`event: ${event.type}\n`);
@@ -88,12 +84,18 @@ export const handler = awslambda.streamifyResponse(
             break;
           }
         }
-        responseStream.end();
-        console.log(
-          "Stream ended in",
-          new Date().getTime() - start.getTime(),
-          "ms"
+        const endMs = new Date().getTime() - start.getTime();
+        console.log("Stream ended in", endMs, "ms");
+        responseStream.write(`event: stats\n`);
+        responseStream.write(
+          `data: ${JSON.stringify({
+            stats: {
+              firstTokenMs,
+              endMs,
+            },
+          })}\n\n`
         );
+        responseStream.end();
       } catch (streamError) {
         console.error("Stream error:", streamError);
         stream.abort();
