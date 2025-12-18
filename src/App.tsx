@@ -3,13 +3,14 @@ import { signOut, getCurrentUser, fetchAuthSession } from "aws-amplify/auth";
 import { Authenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 import amplifyOutputs from "../amplify_outputs.json";
-import { Send, Square, LogOut, MessageCircle, Zap, Radio } from "lucide-react";
+import { Send, Square, LogOut, MessageCircle, Zap, Radio, GitCompare } from "lucide-react";
 import { SignatureV4 } from "@aws-sdk/signature-v4";
 import { HttpRequest } from "@smithy/protocol-http";
 import { Sha256 } from "@aws-crypto/sha256-js";
 import { SubscriptionChat } from "./components/SubscriptionChat";
+import { CompareChat } from "./components/CompareChat";
 
-type ChatMode = "lambda" | "subscription";
+type ChatMode = "lambda" | "subscription" | "compare";
 
 interface Stats {
   client: { firstTokenMs: number; endMs: number };
@@ -312,6 +313,17 @@ function App() {
               <Radio className="w-4 h-4" />
               AppSync Subscription
             </button>
+            <button
+              onClick={() => setChatMode("compare")}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                chatMode === "compare"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "text-slate-500 hover:bg-slate-100"
+              }`}
+            >
+              <GitCompare className="w-4 h-4" />
+              Compare
+            </button>
           </div>
         </div>
       </header>
@@ -319,6 +331,9 @@ function App() {
       <main className="flex-1 overflow-hidden max-w-3xl w-full mx-auto flex flex-col">
         <div className={chatMode === "subscription" ? "flex-1 flex flex-col overflow-hidden" : "hidden"}>
           <SubscriptionChat />
+        </div>
+        <div className={chatMode === "compare" ? "flex-1 flex flex-col overflow-hidden" : "hidden"}>
+          <CompareChat />
         </div>
         <div className={chatMode === "lambda" ? "contents" : "hidden"}>
           <>
