@@ -1,8 +1,12 @@
+console.log("Initializing chat handler");
+
 import { Anthropic } from "@anthropic-ai/sdk";
 
 const client = new Anthropic({
   apiKey: process.env["ANTHROPIC_API_KEY"],
 });
+
+console.log("Anthropic client initialized");
 
 function chatClaudeStream(messages: Anthropic.MessageParam[]) {
   const stream = client.messages.stream({
@@ -17,6 +21,8 @@ function chatClaudeStream(messages: Anthropic.MessageParam[]) {
 
 export const handler = awslambda.streamifyResponse(
   async (event, responseStream, context) => {
+    console.log("Event:", { event });
+    console.log("Context:", { context });
     const metadata = {
       statusCode: 200,
       headers: {
@@ -33,9 +39,6 @@ export const handler = awslambda.streamifyResponse(
 
     try {
       let messages: Anthropic.MessageParam[] = [];
-      console.log("Context:", context);
-
-      console.log("Event:", event);
 
       if (event.body) {
         try {
@@ -56,6 +59,7 @@ export const handler = awslambda.streamifyResponse(
         return;
       }
 
+      console.log("messages:", messages);
       const stream = chatClaudeStream(messages);
 
       try {
@@ -71,6 +75,7 @@ export const handler = awslambda.streamifyResponse(
           }
         }
         responseStream.end();
+        console.log("Stream ended");
       } catch (streamError) {
         console.error("Stream error:", streamError);
         stream.abort();
