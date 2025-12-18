@@ -110,7 +110,6 @@ function App() {
       const signedRequest = await signRequest(chatUrl, body);
 
       const start = new Date();
-      let firstToken: Date | null = null;
       const response = await fetch(chatUrl, {
         method: signedRequest.method,
         headers: signedRequest.headers,
@@ -126,9 +125,14 @@ function App() {
       const decoder = new TextDecoder();
       let fullMessage = "";
       let buffer = "";
-      let firstTokenMs = 0;
-      let endMs = 0;
-      let stats = {};
+      const clientStats: { firstTokenMs: number; endMs: number } = {
+        firstTokenMs: 0,
+        endMs: 0,
+      };
+      let serverStats: { firstTokenMs: number; endMs: number } = {
+        firstTokenMs: 0,
+        endMs: 0,
+      };
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
@@ -143,7 +147,16 @@ function App() {
 
         for (const line of lines) {
           if (line.trim() === "") {
-            if (currentEvent.data) {
+            if (currentEvent.type === "message_stop") {
+              clientStats.endMs = new Date().getTime() - start.getTime();
+            } else if (currentEvent.type === "stats" && currentEvent.data) {
+              try {
+                const eventData = JSON.parse(currentEvent.data);
+                serverStats = eventData["stats"];
+              } catch (e) {
+                console.error("Failed to parse stats:", e);
+              }
+            } else if (currentEvent.data) {
               try {
                 const eventData = JSON.parse(currentEvent.data);
 
@@ -151,6 +164,10 @@ function App() {
                   eventData.type === "content_block_delta" &&
                   eventData.delta?.type === "text_delta"
                 ) {
+                  if (clientStats.firstTokenMs === 0) {
+                    clientStats.firstTokenMs =
+                      new Date().getTime() - start.getTime();
+                  }
                   fullMessage += eventData.delta.text;
                   setStreamingMessage(fullMessage);
                 }
@@ -174,12 +191,13 @@ function App() {
         };
         setMessages([...updatedMessages, assistantMessage]);
       }
-      const clientStats = {
-        firstTokenMs,
-        endMs,
-      };
+
       console.log("Client Stats", clientStats);
-      console.log("Server Stats", stats);
+      console.log("Server Stats", serverStats);
+      console.log("Delta", {
+        firstTokenMs: clientStats.firstTokenMs - serverStats.firstTokenMs,
+        endMs: clientStats.endMs - serverStats.endMs,
+      });
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         if (streamingMessage) {
