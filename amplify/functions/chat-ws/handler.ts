@@ -1,17 +1,11 @@
 console.log("Initializing WebSocket chat handler");
 
-import { Anthropic } from "@anthropic-ai/sdk";
 import { generateClient } from "aws-amplify/data";
 import { getAmplifyDataClientConfig } from "@aws-amplify/backend/function/runtime";
 import type { Schema } from "../../data/resource";
 import { env } from "$amplify/env/chat-ws";
 import { Amplify } from "aws-amplify";
-
-const anthropicClient = new Anthropic({
-  apiKey: process.env["ANTHROPIC_API_KEY"],
-});
-
-console.log("Anthropic client initialized");
+import { createClaudeStream } from "../shared/claude";
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(
   env
@@ -45,35 +39,30 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
 
   const agentPendingMessageId = agentPendingMessage.data?.id;
 
-  console.log("Starting agent response", agentPendingMessageId);
-  const startMs = Date.now();
-  let ttftMs = 0;
-  let completionMs = 0;
-
-  const messagesForClaude = event.arguments.messages
+  const messages = event.arguments.messages
     .filter((m): m is NonNullable<typeof m> => m !== null && m !== undefined)
     .map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
 
-  const stream = anthropicClient.messages.stream({
-    model: "claude-sonnet-4-5-20250929",
-    max_tokens: 2048,
-    messages: messagesForClaude,
-  });
+  console.log("Starting stream response, messages:", messages.length);
+
+  const startMs = Date.now();
+  let ttftMs = 0;
+  const stream = createClaudeStream({ messages });
 
   let fullMessage = "";
 
-  for await (const event of stream) {
-    console.log("Event", event);
+  for await (const streamEvent of stream) {
     if (
-      event.type === "content_block_delta" &&
-      event.delta?.type === "text_delta"
+      streamEvent.type === "content_block_delta" &&
+      streamEvent.delta?.type === "text_delta"
     ) {
-      fullMessage += event.delta.text;
-      if (!ttftMs && event.delta.text) {
+      fullMessage += streamEvent.delta.text;
+      if (!ttftMs && streamEvent.delta.text) {
         ttftMs = Date.now() - startMs;
+        console.log("First token received in", ttftMs, "ms");
       }
       await client.models.ChatMessage.update({
         id: agentPendingMessageId,
@@ -82,7 +71,8 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
     }
   }
 
-  completionMs = Date.now() - startMs;
+  const completionMs = Date.now() - startMs;
+  console.log("Stream complete in", completionMs, "ms");
   const updated = await client.models.ChatMessage.update({
     id: agentPendingMessageId,
     isStreaming: false,

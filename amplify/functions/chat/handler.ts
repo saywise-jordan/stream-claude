@@ -1,23 +1,9 @@
 console.log("Initializing chat handler");
 
-import { Anthropic } from "@anthropic-ai/sdk";
+import type { Anthropic } from "@anthropic-ai/sdk";
+import { createClaudeStream } from "../shared/claude";
 
-const client = new Anthropic({
-  apiKey: process.env["ANTHROPIC_API_KEY"],
-});
-
-console.log("Anthropic client initialized");
-
-function chatClaudeStream(messages: Anthropic.MessageParam[]) {
-  const stream = client.messages.stream({
-    max_tokens: 2048,
-    messages,
-    model: "claude-sonnet-4-5-20250929",
-    system:
-      "You are a helpful AI assistant. You provide clear, accurate, and thoughtful responses to user questions. You are concise but thorough, and you acknowledge when you're uncertain about something. You aim to be conversational yet professional.",
-  });
-  return stream;
-}
+console.log("Chat handler initialized");
 
 export const handler = awslambda.streamifyResponse(
   async (event, responseStream, context) => {
@@ -59,40 +45,40 @@ export const handler = awslambda.streamifyResponse(
         return;
       }
 
-      console.log("messages:", messages.length);
+      console.log("Starting stream response, messages:", messages.length);
 
-      const start = new Date();
-      let firstTokenMs = 0;
-      const stream = chatClaudeStream(messages);
+      const startMs = Date.now();
+      let ttftMs = 0;
+      const stream = createClaudeStream({ messages });
 
       try {
-        for await (const event of stream) {
+        for await (const streamEvent of stream) {
           if (
-            !firstTokenMs &&
-            event.type === "content_block_delta" &&
-            event.delta?.type === "text_delta" &&
-            event.delta.text
+            streamEvent.type === "content_block_delta" &&
+            streamEvent.delta?.type === "text_delta"
           ) {
-            firstTokenMs = new Date().getTime() - start.getTime();
-            console.log("First token received in", firstTokenMs, "ms");
+            if (!ttftMs && streamEvent.delta.text) {
+              ttftMs = Date.now() - startMs;
+              console.log("First token received in", ttftMs, "ms");
+            }
           }
           try {
-            responseStream.write(`event: ${event.type}\n`);
-            responseStream.write(`data: ${JSON.stringify(event)}\n\n`);
+            responseStream.write(`event: ${streamEvent.type}\n`);
+            responseStream.write(`data: ${JSON.stringify(streamEvent)}\n\n`);
           } catch (writeError) {
             console.log("Client disconnected, aborting stream");
             stream.abort();
             break;
           }
         }
-        const endMs = new Date().getTime() - start.getTime();
-        console.log("Stream ended in", endMs, "ms");
+        const completionMs = Date.now() - startMs;
+        console.log("Stream complete in", completionMs, "ms");
         responseStream.write(`event: stats\n`);
         responseStream.write(
           `data: ${JSON.stringify({
             stats: {
-              firstTokenMs,
-              endMs,
+              ttftMs,
+              completionMs,
             },
           })}\n\n`
         );
