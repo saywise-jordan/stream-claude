@@ -84,7 +84,10 @@ export function SubscriptionChat() {
       const { errors } = await client.mutations.chat({
         sessionId: sessionId,
         messageId: messageId,
-        message: messageToSend,
+        messages: [...messages, userMessage].map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
       });
 
       if (errors) {

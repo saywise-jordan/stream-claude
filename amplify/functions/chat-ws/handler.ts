@@ -46,15 +46,17 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
   let ttftMs = 0;
   let completionMs = 0;
 
+  const messagesForClaude = event.arguments.messages
+    .filter((m): m is NonNullable<typeof m> => m !== null && m !== undefined)
+    .map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    }));
+
   const stream = anthropicClient.messages.stream({
     model: "claude-sonnet-4-5-20250929",
     max_tokens: 2048,
-    messages: [
-      {
-        role: "user",
-        content: event.arguments.message,
-      },
-    ],
+    messages: messagesForClaude,
   });
 
   let fullMessage = "";

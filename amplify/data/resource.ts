@@ -7,6 +7,10 @@ Messages can be updated incrementally as content arrives from the AI.
 =========================================================================*/
 const schema = a
   .schema({
+    ChatMessageInput: a.customType({
+      role: a.enum(["user", "assistant"]),
+      content: a.string().required(),
+    }),
     ChatSession: a
       .model({
         title: a.string(),
@@ -42,7 +46,7 @@ const schema = a
       .arguments({
         sessionId: a.id().required(),
         messageId: a.id().required(),
-        message: a.string().required(),
+        messages: a.ref("ChatMessageInput").array().required(),
       })
       .returns(a.ref("ChatMessage"))
       .handler(a.handler.function(chatWs))
