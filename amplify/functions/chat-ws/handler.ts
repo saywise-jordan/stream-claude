@@ -11,9 +11,11 @@ const anthropicClient = new Anthropic({
   apiKey: process.env["ANTHROPIC_API_KEY"],
 });
 
-const { resourceConfig } = await getAmplifyDataClientConfig(env);
+const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(
+  env
+);
 
-Amplify.configure(resourceConfig);
+Amplify.configure(resourceConfig, libraryOptions);
 
 const client = generateClient<Schema>({
   authMode: "iam",
@@ -21,31 +23,11 @@ const client = generateClient<Schema>({
 
 export const handler: Schema["chat"]["functionHandler"] = async (event) => {
   console.log("Event", event);
-  let sessionId = event.arguments.sessionId;
-
-  if (!event.arguments.sessionId) {
-    const session = await client.models.ChatSession.create({
-      title: "New Session",
-    });
-
-    if (!session.data?.id) {
-      throw new Error("Failed to create session");
-    }
-
-    sessionId = session.data?.id;
-  }
-
-  if (!sessionId) {
-    throw new Error("Session ID is required");
-  }
-
-  await client.models.ChatMessage.create({
-    sessionId: sessionId,
-    content: event.arguments.message,
-    role: "user",
-  });
+  const sessionId = event.arguments.sessionId;
+  const messageId = event.arguments.messageId;
 
   const agentPendingMessage = await client.models.ChatMessage.create({
+    id: messageId,
     sessionId: sessionId,
     content: "Thinking...",
     role: "assistant",
@@ -88,7 +70,7 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
     }
   }
 
-  await client.models.ChatMessage.update({
+  const updated = await client.models.ChatMessage.update({
     id: agentPendingMessageId,
     content: fullMessage,
     isStreaming: false,
@@ -97,5 +79,5 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
   });
 
   console.log("Agent response complete", agentPendingMessageId);
-  return true;
+  return updated.data;
 };

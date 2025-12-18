@@ -26,7 +26,10 @@ const schema = a
         createdAt: a.datetime(),
         updatedAt: a.datetime(),
       })
-      .authorization((allow) => [allow.owner()]),
+      .authorization((allow) => [
+        allow.owner(),
+        allow.authenticated().to(["read"]),
+      ]),
     Todo: a
       .model({
         content: a.string(),
@@ -35,10 +38,11 @@ const schema = a
     chat: a
       .mutation()
       .arguments({
-        sessionId: a.id(),
+        sessionId: a.id().required(),
+        messageId: a.id().required(),
         message: a.string().required(),
       })
-      .returns(a.boolean())
+      .returns(a.ref("ChatMessage"))
       .handler(a.handler.function(chatWs))
       .authorization((allow) => [allow.authenticated()]),
   })
