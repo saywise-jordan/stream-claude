@@ -11,9 +11,15 @@ import { Sha256 } from "@aws-crypto/sha256-js";
 
 Amplify.configure(amplifyOutputs);
 
+interface Stats {
+  client: { firstTokenMs: number; endMs: number };
+  server: { firstTokenMs: number; endMs: number };
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
+  stats?: Stats;
 }
 
 function App() {
@@ -24,6 +30,42 @@ function App() {
   const [userEmail, setUserEmail] = useState<string>("");
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  const summarizedStats = (() => {
+    const messagesWithStats = messages.filter((m) => m.stats);
+    if (messagesWithStats.length === 0) return null;
+
+    const clientTTFTs = messagesWithStats.map(
+      (m) => m.stats?.client.firstTokenMs || 0
+    );
+    const serverTTFTs = messagesWithStats.map(
+      (m) => m.stats?.server.firstTokenMs || 0
+    );
+    const networkOverheads = messagesWithStats.map(
+      (m) =>
+        (m.stats?.client.firstTokenMs || 0) -
+        (m.stats?.server.firstTokenMs || 0)
+    );
+
+    const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
+    const avg = (arr: number[]) => Math.round(sum(arr) / arr.length);
+    const percentile = (arr: number[], p: number) => {
+      const sorted = [...arr].sort((a, b) => a - b);
+      const index = Math.ceil((p / 100) * sorted.length) - 1;
+      return sorted[Math.max(0, index)];
+    };
+
+    const count = messagesWithStats.length;
+    return {
+      count,
+      avgClientTTFT: avg(clientTTFTs),
+      avgServerTTFT: avg(serverTTFTs),
+      avgNetwork: avg(networkOverheads),
+      minNetwork: Math.min(...networkOverheads),
+      maxNetwork: Math.max(...networkOverheads),
+      p99Network: percentile(networkOverheads, 99),
+    };
+  })();
 
   useEffect(() => {
     getCurrentUser().then((user) => {
@@ -95,7 +137,11 @@ function App() {
     abortControllerRef.current = new AbortController();
 
     try {
-      const body = JSON.stringify({ messages: updatedMessages });
+      const apiMessages = updatedMessages.map(({ role, content }) => ({
+        role,
+        content,
+      }));
+      const body = JSON.stringify({ messages: apiMessages });
       const signedRequest = await signRequest(chatUrl, body);
 
       const start = new Date();
@@ -177,16 +223,10 @@ function App() {
         const assistantMessage: Message = {
           role: "assistant",
           content: fullMessage,
+          stats: { client: clientStats, server: serverStats },
         };
         setMessages([...updatedMessages, assistantMessage]);
       }
-
-      console.log("Client Stats", clientStats);
-      console.log("Server Stats", serverStats);
-      console.log("Delta", {
-        firstTokenMs: clientStats.firstTokenMs - serverStats.firstTokenMs,
-        endMs: clientStats.endMs - serverStats.endMs,
-      });
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         if (streamingMessage) {
@@ -213,13 +253,6 @@ function App() {
       abortControllerRef.current.abort();
     }
   }
-
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      chat();
-    }
-  };
 
   async function handleSignOut() {
     try {
@@ -276,30 +309,56 @@ function App() {
           ) : (
             <div className="space-y-6">
               {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""}`}
-                >
+                <div key={index}>
                   <div
-                    className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium ${
-                      message.role === "user"
-                        ? "bg-slate-700 text-white"
-                        : "bg-gradient-to-br from-orange-400 to-amber-500 text-white"
-                    }`}
+                    className={`flex gap-3 ${message.role === "user" ? "flex-row-reverse" : ""}`}
                   >
-                    {message.role === "user" ? "You" : "C"}
+                    <div
+                      className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium ${
+                        message.role === "user"
+                          ? "bg-slate-700 text-white"
+                          : "bg-gradient-to-br from-orange-400 to-amber-500 text-white"
+                      }`}
+                    >
+                      {message.role === "user" ? "You" : "C"}
+                    </div>
+                    <div
+                      className={`max-w-[85%] px-4 py-3 rounded-2xl ${
+                        message.role === "user"
+                          ? "bg-slate-700 text-white rounded-tr-md"
+                          : "bg-white text-slate-800 shadow-sm border border-slate-200 rounded-tl-md"
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap leading-relaxed">
+                        {message.content}
+                      </p>
+                    </div>
                   </div>
-                  <div
-                    className={`max-w-[85%] px-4 py-3 rounded-2xl ${
-                      message.role === "user"
-                        ? "bg-slate-700 text-white rounded-tr-md"
-                        : "bg-white text-slate-800 shadow-sm border border-slate-200 rounded-tl-md"
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap leading-relaxed">
-                      {message.content}
-                    </p>
-                  </div>
+                  {message.stats && (
+                    <div className="ml-11 mt-1 flex items-center gap-3 text-[10px] text-slate-400">
+                      <span>
+                        TTFT{" "}
+                        <span className="text-slate-500">
+                          {message.stats.client.firstTokenMs}ms
+                        </span>
+                      </span>
+                      <span>
+                        Server{" "}
+                        <span className="text-slate-500">
+                          {message.stats.server.firstTokenMs}ms
+                        </span>
+                      </span>
+                      <span>
+                        Network{" "}
+                        <span className="text-slate-500">
+                          +
+                          {message.stats.client.firstTokenMs -
+                            message.stats.server.firstTokenMs}
+                          ms
+                        </span>
+                      </span>
+                    </div>
+                  )}
                 </div>
               ))}
               {streamingMessage && (
@@ -321,6 +380,43 @@ function App() {
         </div>
 
         <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-4">
+          {summarizedStats && (
+            <div className="mb-3 flex items-center justify-center gap-4 text-xs text-slate-500">
+              <span className="text-slate-400">
+                {summarizedStats.count} message
+                {summarizedStats.count > 1 ? "s" : ""}
+              </span>
+              <div className="w-px h-3 bg-slate-200" />
+              <span>
+                Avg TTFT{" "}
+                <span className="font-mono text-slate-700">
+                  {summarizedStats.avgClientTTFT}ms
+                </span>
+              </span>
+              <div className="w-px h-3 bg-slate-200" />
+              <span>
+                Avg Server{" "}
+                <span className="font-mono text-slate-700">
+                  {summarizedStats.avgServerTTFT}ms
+                </span>
+              </span>
+              <div className="w-px h-3 bg-slate-200" />
+              <span>
+                Network{" "}
+                <span className="font-mono text-slate-700">
+                  +{summarizedStats.avgNetwork}ms
+                </span>
+                {summarizedStats.count > 1 && (
+                  <span className="text-slate-400">
+                    {" "}
+                    (min {summarizedStats.minNetwork}, max{" "}
+                    {summarizedStats.maxNetwork}, p99 {summarizedStats.p99Network}
+                    ms)
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
           <div className="flex gap-3 items-center">
             <input
               type="text"
