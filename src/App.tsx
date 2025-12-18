@@ -126,6 +126,9 @@ function App() {
       const decoder = new TextDecoder();
       let fullMessage = "";
       let buffer = "";
+      let firstTokenMs = 0;
+      let endMs = 0;
+      let stats = {};
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
@@ -150,14 +153,6 @@ function App() {
                 ) {
                   fullMessage += eventData.delta.text;
                   setStreamingMessage(fullMessage);
-                  if (!firstToken) {
-                    firstToken = new Date();
-                    console.log(
-                      "First token received in",
-                      firstToken.getTime() - start.getTime(),
-                      "ms"
-                    );
-                  }
                 }
               } catch (e) {
                 console.error("Failed to parse event data:", e);
@@ -179,6 +174,12 @@ function App() {
         };
         setMessages([...updatedMessages, assistantMessage]);
       }
+      const clientStats = {
+        firstTokenMs,
+        endMs,
+      };
+      console.log("Client Stats", clientStats);
+      console.log("Server Stats", stats);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         if (streamingMessage) {
