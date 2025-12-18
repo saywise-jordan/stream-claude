@@ -39,6 +39,7 @@ const schema = a
         message: a.string().required(),
       })
       .returns(a.boolean())
+      .handler(a.handler.function(chatWs))
       .authorization((allow) => [allow.authenticated()]),
   })
   .authorization((allow) => [allow.resource(chatWs)]);
