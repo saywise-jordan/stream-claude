@@ -29,7 +29,7 @@ function App() {
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [streamingMessage, setStreamingMessage] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string>("");
-  const [chatMode, setChatMode] = useState<ChatMode>("lambda");
+  const [chatMode, setChatMode] = useState<ChatMode>("compare");
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -292,6 +292,17 @@ function App() {
         <div className="max-w-3xl mx-auto px-4 pb-3">
           <div className="flex gap-2">
             <button
+              onClick={() => setChatMode("compare")}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                chatMode === "compare"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "text-slate-500 hover:bg-slate-100"
+              }`}
+            >
+              <GitCompare className="w-4 h-4" />
+              Compare
+            </button>
+            <button
               onClick={() => setChatMode("lambda")}
               className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                 chatMode === "lambda"
@@ -312,17 +323,6 @@ function App() {
             >
               <Radio className="w-4 h-4" />
               AppSync Subscription
-            </button>
-            <button
-              onClick={() => setChatMode("compare")}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                chatMode === "compare"
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "text-slate-500 hover:bg-slate-100"
-              }`}
-            >
-              <GitCompare className="w-4 h-4" />
-              Compare
             </button>
           </div>
         </div>
