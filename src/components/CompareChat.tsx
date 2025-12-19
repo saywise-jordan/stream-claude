@@ -40,6 +40,7 @@ export function CompareChat() {
   const [compareMessages, setCompareMessages] = useState<CompareMessage[]>([]);
   const [userInput, setUserInput] = useState<string>("");
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
+  const [simulate, setSimulate] = useState<boolean>(true);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -153,7 +154,7 @@ export function CompareChat() {
     abortControllerRef.current = new AbortController();
 
     try {
-      const body = JSON.stringify({ messages });
+      const body = JSON.stringify({ messages, simulate });
       const signedRequest = await signRequest(chatUrl, body);
 
       const response = await fetch(chatUrl, {
@@ -187,7 +188,7 @@ export function CompareChat() {
             if (currentEvent.type === "stats" && currentEvent.data) {
               try {
                 const eventData = JSON.parse(currentEvent.data);
-                serverTtftMs = eventData.stats?.firstTokenMs || 0;
+                serverTtftMs = eventData.stats?.ttftMs || 0;
               } catch (e) {
                 console.error("Failed to parse stats:", e);
               }
@@ -312,6 +313,7 @@ export function CompareChat() {
           role: m.role,
           content: m.content,
         })),
+        simulate,
       });
     } catch (error) {
       console.error("AppSync mutation error:", error);
@@ -509,6 +511,16 @@ export function CompareChat() {
           </div>
         )}
         <div className="flex gap-3 items-center">
+          <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={simulate}
+              onChange={(e) => setSimulate(e.target.checked)}
+              disabled={isStreaming}
+              className="w-4 h-4 rounded border-slate-300 text-emerald-500 focus:ring-emerald-400 disabled:opacity-50"
+            />
+            Simulate
+          </label>
           <input
             type="text"
             value={userInput}
@@ -519,7 +531,7 @@ export function CompareChat() {
                 sendMessage();
               }
             }}
-            placeholder="Message Claude (comparing both backends)..."
+            placeholder={simulate ? "Message (simulated response)..." : "Message Claude (comparing both backends)..."}
             disabled={isStreaming}
             className="flex-1 px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           />

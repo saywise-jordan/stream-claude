@@ -23,6 +23,7 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
   console.log("Event", event);
   const sessionId = event.arguments.sessionId;
   const messageId = event.arguments.messageId;
+  const simulate = event.arguments.simulate ?? false;
 
   const agentPendingMessage = await client.models.ChatMessage.create({
     id: messageId,
@@ -46,11 +47,11 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
       content: m.content,
     }));
 
-  console.log("Starting stream response, messages:", messages.length);
+  console.log("Starting stream response, messages:", messages.length, "simulate:", simulate);
 
   const startMs = Date.now();
   let ttftMs = 0;
-  const stream = createClaudeStream({ messages });
+  const stream = createClaudeStream({ messages, simulate });
 
   let fullMessage = "";
 

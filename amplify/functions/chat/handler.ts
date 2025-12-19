@@ -25,12 +25,16 @@ export const handler = awslambda.streamifyResponse(
 
     try {
       let messages: Anthropic.MessageParam[] = [];
+      let simulate = false;
 
       if (event.body) {
         try {
           const body = JSON.parse(event.body);
           if (body.messages && Array.isArray(body.messages)) {
             messages = body.messages;
+          }
+          if (body.simulate === true) {
+            simulate = true;
           }
         } catch (parseError) {
           console.error("Failed to parse request body:", parseError);
@@ -45,11 +49,11 @@ export const handler = awslambda.streamifyResponse(
         return;
       }
 
-      console.log("Starting stream response, messages:", messages.length);
+      console.log("Starting stream response, messages:", messages.length, "simulate:", simulate);
 
       const startMs = Date.now();
       let ttftMs = 0;
-      const stream = createClaudeStream({ messages });
+      const stream = createClaudeStream({ messages, simulate });
 
       try {
         for await (const streamEvent of stream) {

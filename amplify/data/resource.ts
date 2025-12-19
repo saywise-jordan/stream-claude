@@ -47,6 +47,7 @@ const schema = a
         sessionId: a.id().required(),
         messageId: a.id().required(),
         messages: a.ref("ChatMessageInput").array().required(),
+        simulate: a.boolean(),
       })
       .returns(a.ref("ChatMessage"))
       .handler(a.handler.function(chatWs))
