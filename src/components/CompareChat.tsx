@@ -282,11 +282,16 @@ export function CompareChat() {
           if (!updatedMessage) return;
 
           let clientTtftMs: number | undefined;
+          let completionMs: number | undefined;
           const hasContent =
             updatedMessage.content && updatedMessage.content !== "Thinking...";
           if (!appsyncFirstUpdateRef.current && hasContent) {
             appsyncFirstUpdateRef.current = true;
             clientTtftMs = Date.now() - appsyncStartRef.current;
+          }
+
+          if (updatedMessage.isComplete) {
+            completionMs = Date.now() - appsyncStartRef.current;
           }
 
           setCompareMessages((prev) =>
@@ -302,8 +307,7 @@ export function CompareChat() {
                       stats: {
                         clientTtftMs: clientTtftMs ?? cm.appsync.stats?.clientTtftMs,
                         serverTtftMs: updatedMessage.ttftMs ?? cm.appsync.stats?.serverTtftMs,
-                        completionMs:
-                          updatedMessage.completionMs ?? cm.appsync.stats?.completionMs,
+                        completionMs: completionMs ?? cm.appsync.stats?.completionMs,
                       },
                     },
                   }
@@ -501,6 +505,10 @@ export function CompareChat() {
     const appsyncTtfts = completed.map((cm) => cm.appsync.stats?.clientTtftMs || 0);
     const websocketTtfts = completed.map((cm) => cm.websocket.stats?.clientTtftMs || 0);
 
+    const lambdaCompletions = completed.map((cm) => cm.lambda.stats?.completionMs || 0);
+    const appsyncCompletions = completed.map((cm) => cm.appsync.stats?.completionMs || 0);
+    const websocketCompletions = completed.map((cm) => cm.websocket.stats?.completionMs || 0);
+
     const avg = (arr: number[]) => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
 
     return {
@@ -508,6 +516,9 @@ export function CompareChat() {
       lambdaAvgTtft: avg(lambdaTtfts),
       appsyncAvgTtft: avg(appsyncTtfts),
       websocketAvgTtft: avg(websocketTtfts),
+      lambdaAvgCompletion: avg(lambdaCompletions),
+      appsyncAvgCompletion: avg(appsyncCompletions),
+      websocketAvgCompletion: avg(websocketCompletions),
     };
   })();
 
@@ -551,6 +562,9 @@ export function CompareChat() {
                       {cm.lambda.isComplete && cm.lambda.stats && (
                         <span className="text-slate-400 font-normal ml-2">
                           TTFT: {cm.lambda.stats.clientTtftMs}ms
+                          {simulate && cm.lambda.stats.completionMs && (
+                            <> | Done: {cm.lambda.stats.completionMs}ms</>
+                          )}
                         </span>
                       )}
                     </div>
@@ -572,6 +586,9 @@ export function CompareChat() {
                       {cm.websocket.isComplete && cm.websocket.stats && (
                         <span className="text-slate-400 font-normal ml-2">
                           TTFT: {cm.websocket.stats.clientTtftMs}ms
+                          {simulate && cm.websocket.stats.completionMs && (
+                            <> | Done: {cm.websocket.stats.completionMs}ms</>
+                          )}
                         </span>
                       )}
                     </div>
@@ -593,6 +610,9 @@ export function CompareChat() {
                       {cm.appsync.isComplete && cm.appsync.stats && (
                         <span className="text-slate-400 font-normal ml-2">
                           TTFT: {cm.appsync.stats.clientTtftMs}ms
+                          {simulate && cm.appsync.stats.completionMs && (
+                            <> | Done: {cm.appsync.stats.completionMs}ms</>
+                          )}
                         </span>
                       )}
                     </div>
@@ -609,25 +629,49 @@ export function CompareChat() {
                 </div>
 
                 {cm.lambda.isComplete && cm.appsync.isComplete && cm.websocket.isComplete && (
-                  <div className="flex justify-center gap-6 text-xs text-slate-500">
-                    <span>
-                      Lambda:{" "}
-                      <span className="font-mono text-orange-600">
-                        {cm.lambda.stats?.clientTtftMs}ms
+                  <div className="flex flex-col items-center gap-1 text-xs text-slate-500">
+                    <div className="flex justify-center gap-6">
+                      <span>
+                        Lambda:{" "}
+                        <span className="font-mono text-orange-600">
+                          {cm.lambda.stats?.clientTtftMs}ms
+                        </span>
                       </span>
-                    </span>
-                    <span>
-                      WebSocket:{" "}
-                      <span className="font-mono text-cyan-600">
-                        {cm.websocket.stats?.clientTtftMs}ms
+                      <span>
+                        WebSocket:{" "}
+                        <span className="font-mono text-cyan-600">
+                          {cm.websocket.stats?.clientTtftMs}ms
+                        </span>
                       </span>
-                    </span>
-                    <span>
-                      AppSync:{" "}
-                      <span className="font-mono text-violet-600">
-                        {cm.appsync.stats?.clientTtftMs}ms
+                      <span>
+                        AppSync:{" "}
+                        <span className="font-mono text-violet-600">
+                          {cm.appsync.stats?.clientTtftMs}ms
+                        </span>
                       </span>
-                    </span>
+                    </div>
+                    {simulate && (
+                      <div className="flex justify-center gap-6 text-slate-400">
+                        <span>
+                          Done:{" "}
+                          <span className="font-mono text-orange-500">
+                            {cm.lambda.stats?.completionMs}ms
+                          </span>
+                        </span>
+                        <span>
+                          Done:{" "}
+                          <span className="font-mono text-cyan-500">
+                            {cm.websocket.stats?.completionMs}ms
+                          </span>
+                        </span>
+                        <span>
+                          Done:{" "}
+                          <span className="font-mono text-violet-500">
+                            {cm.appsync.stats?.completionMs}ms
+                          </span>
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -639,32 +683,54 @@ export function CompareChat() {
 
       <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-4">
         {summarizedStats && (
-          <div className="mb-3 flex items-center justify-center gap-4 text-xs text-slate-500">
-            <span className="text-slate-400">
-              {summarizedStats.count} comparison
-              {summarizedStats.count > 1 ? "s" : ""}
-            </span>
-            <div className="w-px h-3 bg-slate-200" />
-            <span>
-              Lambda{" "}
-              <span className="font-mono text-orange-600">
-                {summarizedStats.lambdaAvgTtft}ms
+          <div className="mb-3 flex flex-col items-center gap-1 text-xs text-slate-500">
+            <div className="flex items-center justify-center gap-4">
+              <span className="text-slate-400">
+                {summarizedStats.count} comparison
+                {summarizedStats.count > 1 ? "s" : ""}
               </span>
-            </span>
-            <div className="w-px h-3 bg-slate-200" />
-            <span>
-              WebSocket{" "}
-              <span className="font-mono text-cyan-600">
-                {summarizedStats.websocketAvgTtft}ms
+              <div className="w-px h-3 bg-slate-200" />
+              <span>
+                Lambda{" "}
+                <span className="font-mono text-orange-600">
+                  {summarizedStats.lambdaAvgTtft}ms
+                </span>
               </span>
-            </span>
-            <div className="w-px h-3 bg-slate-200" />
-            <span>
-              AppSync{" "}
-              <span className="font-mono text-violet-600">
-                {summarizedStats.appsyncAvgTtft}ms
+              <div className="w-px h-3 bg-slate-200" />
+              <span>
+                WebSocket{" "}
+                <span className="font-mono text-cyan-600">
+                  {summarizedStats.websocketAvgTtft}ms
+                </span>
               </span>
-            </span>
+              <div className="w-px h-3 bg-slate-200" />
+              <span>
+                AppSync{" "}
+                <span className="font-mono text-violet-600">
+                  {summarizedStats.appsyncAvgTtft}ms
+                </span>
+              </span>
+            </div>
+            {simulate && (
+              <div className="flex items-center justify-center gap-4 text-slate-400">
+                <span>Avg completion:</span>
+                <span>
+                  <span className="font-mono text-orange-500">
+                    {summarizedStats.lambdaAvgCompletion}ms
+                  </span>
+                </span>
+                <span>
+                  <span className="font-mono text-cyan-500">
+                    {summarizedStats.websocketAvgCompletion}ms
+                  </span>
+                </span>
+                <span>
+                  <span className="font-mono text-violet-500">
+                    {summarizedStats.appsyncAvgCompletion}ms
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
         )}
         <div className="flex gap-3 items-center">
