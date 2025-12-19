@@ -142,6 +142,8 @@ export function CompareChat() {
       streamFromLambda(compareId, messagesForApi),
       streamFromAppSync(compareId, appsyncId, messagesForApi),
     ]);
+
+    setIsStreaming(false);
   }
 
   async function streamFromLambda(
@@ -173,6 +175,7 @@ export function CompareChat() {
       let clientTtftMs = 0;
       let serverTtftMs = 0;
 
+      // eslint-disable-next-line no-constant-condition
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -252,61 +255,61 @@ export function CompareChat() {
     compareId: string,
     messageId: string,
     messages: { role: "user" | "assistant"; content: string }[]
-  ) {
+  ): Promise<void> {
     updateSubRef.current?.unsubscribe();
 
-    const updateSub = client.models.ChatMessage.onUpdate({
-      filter: { id: { eq: messageId } },
-    }).subscribe({
-      next: (updatedMessage) => {
-        if (!updatedMessage) return;
+    return new Promise((resolve) => {
+      const updateSub = client.models.ChatMessage.onUpdate({
+        filter: { id: { eq: messageId } },
+      }).subscribe({
+        next: (updatedMessage) => {
+          if (!updatedMessage) return;
 
-        let clientTtftMs: number | undefined;
-        const hasContent =
-          updatedMessage.content && updatedMessage.content !== "Thinking...";
-        if (!appsyncFirstUpdateRef.current && hasContent) {
-          appsyncFirstUpdateRef.current = true;
-          clientTtftMs = Date.now() - appsyncStartRef.current;
-        }
+          let clientTtftMs: number | undefined;
+          const hasContent =
+            updatedMessage.content && updatedMessage.content !== "Thinking...";
+          if (!appsyncFirstUpdateRef.current && hasContent) {
+            appsyncFirstUpdateRef.current = true;
+            clientTtftMs = Date.now() - appsyncStartRef.current;
+          }
 
-        setCompareMessages((prev) =>
-          prev.map((cm) =>
-            cm.id === compareId
-              ? {
-                  ...cm,
-                  appsync: {
-                    ...cm.appsync,
-                    content: updatedMessage.content,
-                    isStreaming: updatedMessage.isStreaming || false,
-                    isComplete: updatedMessage.isComplete || false,
-                    stats: {
-                      clientTtftMs: clientTtftMs ?? cm.appsync.stats?.clientTtftMs,
-                      serverTtftMs: updatedMessage.ttftMs ?? cm.appsync.stats?.serverTtftMs,
-                      completionMs:
-                        updatedMessage.completionMs ?? cm.appsync.stats?.completionMs,
+          setCompareMessages((prev) =>
+            prev.map((cm) =>
+              cm.id === compareId
+                ? {
+                    ...cm,
+                    appsync: {
+                      ...cm.appsync,
+                      content: updatedMessage.content,
+                      isStreaming: updatedMessage.isStreaming || false,
+                      isComplete: updatedMessage.isComplete || false,
+                      stats: {
+                        clientTtftMs: clientTtftMs ?? cm.appsync.stats?.clientTtftMs,
+                        serverTtftMs: updatedMessage.ttftMs ?? cm.appsync.stats?.serverTtftMs,
+                        completionMs:
+                          updatedMessage.completionMs ?? cm.appsync.stats?.completionMs,
+                      },
                     },
-                  },
-                }
-              : cm
-          )
-        );
+                  }
+                : cm
+            )
+          );
 
-        if (updatedMessage.isComplete) {
-          checkStreamingComplete();
-          updateSubRef.current?.unsubscribe();
-          updateSubRef.current = null;
-        }
-      },
-      error: (error) => {
-        console.error("AppSync subscription error:", error);
-        checkStreamingComplete();
-      },
-    });
+          if (updatedMessage.isComplete) {
+            updateSubRef.current?.unsubscribe();
+            updateSubRef.current = null;
+            resolve();
+          }
+        },
+        error: (error) => {
+          console.error("AppSync subscription error:", error);
+          resolve();
+        },
+      });
 
-    updateSubRef.current = updateSub;
+      updateSubRef.current = updateSub;
 
-    try {
-      await client.mutations.chat({
+      client.mutations.chat({
         sessionId: crypto.randomUUID(),
         messageId: messageId,
         messages: messages.map((m) => ({
@@ -314,19 +317,10 @@ export function CompareChat() {
           content: m.content,
         })),
         simulate,
+      }).catch((error) => {
+        console.error("AppSync mutation error:", error);
+        resolve();
       });
-    } catch (error) {
-      console.error("AppSync mutation error:", error);
-    }
-  }
-
-  function checkStreamingComplete() {
-    setCompareMessages((prev) => {
-      const lastMessage = prev[prev.length - 1];
-      if (lastMessage?.lambda.isComplete && lastMessage?.appsync.isComplete) {
-        setIsStreaming(false);
-      }
-      return prev;
     });
   }
 

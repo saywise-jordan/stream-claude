@@ -6,6 +6,7 @@ import type { Schema } from "../../data/resource";
 import { env } from "$amplify/env/chat-ws";
 import { Amplify } from "aws-amplify";
 import { createClaudeStream } from "../shared/claude";
+import { MessageStream } from "@anthropic-ai/sdk/lib/MessageStream.mjs";
 
 const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(
   env
@@ -47,13 +48,20 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
       content: m.content,
     }));
 
-  console.log("Starting stream response, messages:", messages.length, "simulate:", simulate);
+  console.log(
+    "Starting stream response, messages:",
+    messages.length,
+    "simulate:",
+    simulate
+  );
 
   const startMs = Date.now();
   let ttftMs = 0;
   const stream = createClaudeStream({ messages, simulate });
 
   let fullMessage = "";
+
+  let lastPromise: Promise<unknown> | null = null;
 
   for await (const streamEvent of stream) {
     if (
@@ -65,7 +73,7 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
         ttftMs = Date.now() - startMs;
         console.log("First token received in", ttftMs, "ms");
       }
-      await client.models.ChatMessage.update({
+      lastPromise = client.models.ChatMessage.update({
         id: agentPendingMessageId,
         content: fullMessage,
       });
@@ -74,8 +82,18 @@ export const handler: Schema["chat"]["functionHandler"] = async (event) => {
 
   const completionMs = Date.now() - startMs;
   console.log("Stream complete in", completionMs, "ms");
+  await lastPromise;
+
+  let finalMessage = "";
+  if (!simulate) {
+    finalMessage = await (stream as unknown as MessageStream).finalText();
+  } else {
+    finalMessage = fullMessage;
+  }
+
   const updated = await client.models.ChatMessage.update({
     id: agentPendingMessageId,
+    content: finalMessage,
     isStreaming: false,
     isComplete: true,
     tokenCount: fullMessage.length,
