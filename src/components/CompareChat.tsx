@@ -30,6 +30,7 @@ interface CompareMessage {
   userContent: string;
   lambda: Message & { stats?: MessageStats };
   appsync: Message & { stats?: MessageStats };
+  websocket: Message & { stats?: MessageStats };
 }
 
 const client = generateClient<Schema>({
@@ -45,9 +46,12 @@ export function CompareChat() {
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const updateSubRef = useRef<{ unsubscribe: () => void } | null>(null);
+  const websocketRef = useRef<WebSocket | null>(null);
   const lambdaStartRef = useRef<number>(0);
   const appsyncStartRef = useRef<number>(0);
+  const websocketStartRef = useRef<number>(0);
   const appsyncFirstUpdateRef = useRef<boolean>(false);
+  const websocketFirstUpdateRef = useRef<boolean>(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -57,6 +61,7 @@ export function CompareChat() {
     return () => {
       abortControllerRef.current?.abort();
       updateSubRef.current?.unsubscribe();
+      websocketRef.current?.close();
     };
   }, []);
 
@@ -102,6 +107,7 @@ export function CompareChat() {
     const compareId = crypto.randomUUID();
     const lambdaId = `lambda-${compareId}`;
     const appsyncId = crypto.randomUUID();
+    const websocketId = `ws-${compareId}`;
 
     const allMessages = compareMessages.flatMap((cm) => [
       { role: "user" as const, content: cm.userContent },
@@ -125,13 +131,22 @@ export function CompareChat() {
         isStreaming: true,
         isComplete: false,
       },
+      websocket: {
+        id: websocketId,
+        role: "assistant",
+        content: "",
+        isStreaming: true,
+        isComplete: false,
+      },
     };
 
     setCompareMessages((prev) => [...prev, newCompareMessage]);
 
     lambdaStartRef.current = Date.now();
     appsyncStartRef.current = Date.now();
+    websocketStartRef.current = Date.now();
     appsyncFirstUpdateRef.current = false;
+    websocketFirstUpdateRef.current = false;
 
     const messagesForApi = [
       ...allMessages,
@@ -141,6 +156,7 @@ export function CompareChat() {
     await Promise.all([
       streamFromLambda(compareId, messagesForApi),
       streamFromAppSync(compareId, appsyncId, messagesForApi),
+      streamFromWebSocket(compareId, messagesForApi),
     ]);
 
     setIsStreaming(false);
@@ -324,20 +340,166 @@ export function CompareChat() {
     });
   }
 
+  async function streamFromWebSocket(
+    compareId: string,
+    messages: { role: "user" | "assistant"; content: string }[]
+  ): Promise<void> {
+    const wsUrl = (amplifyOutputs.custom as { chatUrl: string; chatWebSocketUrl?: string })?.chatWebSocketUrl;
+    if (!wsUrl) {
+      console.error("WebSocket URL not configured");
+      setCompareMessages((prev) =>
+        prev.map((cm) =>
+          cm.id === compareId
+            ? {
+                ...cm,
+                websocket: {
+                  ...cm.websocket,
+                  content: "WebSocket URL not configured",
+                  isStreaming: false,
+                  isComplete: true,
+                },
+              }
+            : cm
+        )
+      );
+      return;
+    }
+
+    return new Promise((resolve) => {
+      const ws = new WebSocket(wsUrl);
+      websocketRef.current = ws;
+
+      let fullMessage = "";
+      let clientTtftMs = 0;
+      let serverTtftMs = 0;
+
+      ws.onopen = () => {
+        console.log("WebSocket connected");
+        ws.send(
+          JSON.stringify({
+            action: "sendMessage",
+            messages,
+            simulate,
+          })
+        );
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "stream" && data.event) {
+            const streamEvent = data.event;
+            if (
+              streamEvent.type === "content_block_delta" &&
+              streamEvent.delta?.type === "text_delta"
+            ) {
+              if (!websocketFirstUpdateRef.current) {
+                websocketFirstUpdateRef.current = true;
+                clientTtftMs = Date.now() - websocketStartRef.current;
+              }
+              fullMessage += streamEvent.delta.text;
+              setCompareMessages((prev) =>
+                prev.map((cm) =>
+                  cm.id === compareId
+                    ? {
+                        ...cm,
+                        websocket: { ...cm.websocket, content: fullMessage },
+                      }
+                    : cm
+                )
+              );
+            }
+          } else if (data.type === "stats") {
+            serverTtftMs = data.stats?.ttftMs || 0;
+          } else if (data.type === "done") {
+            const completionMs = Date.now() - websocketStartRef.current;
+            setCompareMessages((prev) =>
+              prev.map((cm) =>
+                cm.id === compareId
+                  ? {
+                      ...cm,
+                      websocket: {
+                        ...cm.websocket,
+                        content: fullMessage,
+                        isStreaming: false,
+                        isComplete: true,
+                        stats: { clientTtftMs, serverTtftMs, completionMs },
+                      },
+                    }
+                  : cm
+              )
+            );
+            ws.close();
+            resolve();
+          } else if (data.type === "error") {
+            console.error("WebSocket error:", data.message);
+            setCompareMessages((prev) =>
+              prev.map((cm) =>
+                cm.id === compareId
+                  ? {
+                      ...cm,
+                      websocket: {
+                        ...cm.websocket,
+                        content: `Error: ${data.message}`,
+                        isStreaming: false,
+                        isComplete: true,
+                      },
+                    }
+                  : cm
+              )
+            );
+            ws.close();
+            resolve();
+          }
+        } catch (e) {
+          console.error("Failed to parse WebSocket message:", e);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        setCompareMessages((prev) =>
+          prev.map((cm) =>
+            cm.id === compareId
+              ? {
+                  ...cm,
+                  websocket: {
+                    ...cm.websocket,
+                    content: "WebSocket connection error",
+                    isStreaming: false,
+                    isComplete: true,
+                  },
+                }
+              : cm
+          )
+        );
+        resolve();
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket closed");
+        websocketRef.current = null;
+      };
+    });
+  }
+
   function stopStreaming() {
     abortControllerRef.current?.abort();
     updateSubRef.current?.unsubscribe();
+    websocketRef.current?.close();
     setIsStreaming(false);
   }
 
   const summarizedStats = (() => {
     const completed = compareMessages.filter(
-      (cm) => cm.lambda.isComplete && cm.appsync.isComplete
+      (cm) => cm.lambda.isComplete && cm.appsync.isComplete && cm.websocket.isComplete
     );
     if (completed.length === 0) return null;
 
     const lambdaTtfts = completed.map((cm) => cm.lambda.stats?.clientTtftMs || 0);
     const appsyncTtfts = completed.map((cm) => cm.appsync.stats?.clientTtftMs || 0);
+    const websocketTtfts = completed.map((cm) => cm.websocket.stats?.clientTtftMs || 0);
 
     const avg = (arr: number[]) => Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
 
@@ -345,7 +507,7 @@ export function CompareChat() {
       count: completed.length,
       lambdaAvgTtft: avg(lambdaTtfts),
       appsyncAvgTtft: avg(appsyncTtfts),
-      difference: avg(appsyncTtfts) - avg(lambdaTtfts),
+      websocketAvgTtft: avg(websocketTtfts),
     };
   })();
 
@@ -362,7 +524,7 @@ export function CompareChat() {
                 Compare Mode
               </h2>
               <p className="text-slate-500">
-                Send a message to both Lambda Stream and AppSync Subscription
+                Send a message to Lambda Stream, AppSync Subscription, and API Gateway WebSocket
                 simultaneously and compare the streaming performance.
               </p>
             </div>
@@ -382,7 +544,7 @@ export function CompareChat() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <div className="text-xs font-medium text-orange-600 flex items-center gap-1">
                       Lambda Stream
@@ -399,6 +561,27 @@ export function CompareChat() {
                         )}
                         {cm.lambda.isStreaming && cm.lambda.content && (
                           <span className="inline-block w-2 h-4 ml-1 bg-orange-400 animate-pulse rounded-sm align-middle" />
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-cyan-600 flex items-center gap-1">
+                      WebSocket
+                      {cm.websocket.isComplete && cm.websocket.stats && (
+                        <span className="text-slate-400 font-normal ml-2">
+                          TTFT: {cm.websocket.stats.clientTtftMs}ms
+                        </span>
+                      )}
+                    </div>
+                    <div className="px-4 py-3 rounded-2xl bg-white text-slate-800 shadow-sm border border-cyan-200 rounded-tl-md min-h-[60px]">
+                      <p className="whitespace-pre-wrap leading-relaxed text-sm">
+                        {cm.websocket.content || (
+                          <span className="text-slate-400">Waiting...</span>
+                        )}
+                        {cm.websocket.isStreaming && cm.websocket.content && (
+                          <span className="inline-block w-2 h-4 ml-1 bg-cyan-400 animate-pulse rounded-sm align-middle" />
                         )}
                       </p>
                     </div>
@@ -425,7 +608,7 @@ export function CompareChat() {
                   </div>
                 </div>
 
-                {cm.lambda.isComplete && cm.appsync.isComplete && (
+                {cm.lambda.isComplete && cm.appsync.isComplete && cm.websocket.isComplete && (
                   <div className="flex justify-center gap-6 text-xs text-slate-500">
                     <span>
                       Lambda:{" "}
@@ -434,30 +617,15 @@ export function CompareChat() {
                       </span>
                     </span>
                     <span>
-                      AppSync:{" "}
-                      <span className="font-mono text-violet-600">
-                        {cm.appsync.stats?.clientTtftMs}ms
+                      WebSocket:{" "}
+                      <span className="font-mono text-cyan-600">
+                        {cm.websocket.stats?.clientTtftMs}ms
                       </span>
                     </span>
                     <span>
-                      Diff:{" "}
-                      <span
-                        className={`font-mono ${
-                          (cm.appsync.stats?.clientTtftMs || 0) -
-                            (cm.lambda.stats?.clientTtftMs || 0) >
-                          0
-                            ? "text-red-500"
-                            : "text-green-500"
-                        }`}
-                      >
-                        {(cm.appsync.stats?.clientTtftMs || 0) -
-                          (cm.lambda.stats?.clientTtftMs || 0) >
-                        0
-                          ? "+"
-                          : ""}
-                        {(cm.appsync.stats?.clientTtftMs || 0) -
-                          (cm.lambda.stats?.clientTtftMs || 0)}
-                        ms
+                      AppSync:{" "}
+                      <span className="font-mono text-violet-600">
+                        {cm.appsync.stats?.clientTtftMs}ms
                       </span>
                     </span>
                   </div>
@@ -478,28 +646,23 @@ export function CompareChat() {
             </span>
             <div className="w-px h-3 bg-slate-200" />
             <span>
-              Lambda Avg{" "}
+              Lambda{" "}
               <span className="font-mono text-orange-600">
                 {summarizedStats.lambdaAvgTtft}ms
               </span>
             </span>
             <div className="w-px h-3 bg-slate-200" />
             <span>
-              AppSync Avg{" "}
-              <span className="font-mono text-violet-600">
-                {summarizedStats.appsyncAvgTtft}ms
+              WebSocket{" "}
+              <span className="font-mono text-cyan-600">
+                {summarizedStats.websocketAvgTtft}ms
               </span>
             </span>
             <div className="w-px h-3 bg-slate-200" />
             <span>
-              Diff{" "}
-              <span
-                className={`font-mono ${
-                  summarizedStats.difference > 0 ? "text-red-500" : "text-green-500"
-                }`}
-              >
-                {summarizedStats.difference > 0 ? "+" : ""}
-                {summarizedStats.difference}ms
+              AppSync{" "}
+              <span className="font-mono text-violet-600">
+                {summarizedStats.appsyncAvgTtft}ms
               </span>
             </span>
           </div>
@@ -525,7 +688,7 @@ export function CompareChat() {
                 sendMessage();
               }
             }}
-            placeholder={simulate ? "Message (simulated response)..." : "Message Claude (comparing both backends)..."}
+            placeholder={simulate ? "Message (simulated response)..." : "Message Claude (comparing all backends)..."}
             disabled={isStreaming}
             className="flex-1 px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           />
