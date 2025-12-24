@@ -3,7 +3,15 @@ import { signOut, getCurrentUser, fetchAuthSession } from "aws-amplify/auth";
 import { Authenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 import amplifyOutputs from "../amplify_outputs.json";
-import { Send, Square, LogOut, MessageCircle, Zap, Radio, GitCompare } from "lucide-react";
+import {
+  Send,
+  Square,
+  LogOut,
+  MessageCircle,
+  Zap,
+  Radio,
+  GitCompare,
+} from "lucide-react";
 import { SignatureV4 } from "@aws-sdk/signature-v4";
 import { HttpRequest } from "@smithy/protocol-http";
 import { Sha256 } from "@aws-crypto/sha256-js";
@@ -329,10 +337,22 @@ function App() {
       </header>
 
       <main className="flex-1 overflow-hidden max-w-3xl w-full mx-auto flex flex-col">
-        <div className={chatMode === "subscription" ? "flex-1 flex flex-col overflow-hidden" : "hidden"}>
+        <div
+          className={
+            chatMode === "subscription"
+              ? "flex-1 flex flex-col overflow-hidden"
+              : "hidden"
+          }
+        >
           <SubscriptionChat />
         </div>
-        <div className={chatMode === "compare" ? "flex-1 flex flex-col overflow-hidden" : "hidden"}>
+        <div
+          className={
+            chatMode === "compare"
+              ? "flex-1 flex flex-col overflow-hidden"
+              : "hidden"
+          }
+        >
           <CompareChat />
         </div>
         <div className={chatMode === "lambda" ? "contents" : "hidden"}>
