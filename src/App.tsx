@@ -1,5 +1,9 @@
 import { useEffect, useState, useRef } from "react";
-import { signOut, getCurrentUser, fetchAuthSession } from "aws-amplify/auth";
+import {
+  signOut,
+  fetchAuthSession,
+  fetchUserAttributes,
+} from "aws-amplify/auth";
 import { Authenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 import amplifyOutputs from "../amplify_outputs.json";
@@ -11,14 +15,16 @@ import {
   Zap,
   Radio,
   GitCompare,
+  Container,
 } from "lucide-react";
 import { SignatureV4 } from "@aws-sdk/signature-v4";
 import { HttpRequest } from "@smithy/protocol-http";
 import { Sha256 } from "@aws-crypto/sha256-js";
 import { SubscriptionChat } from "./components/SubscriptionChat";
 import { CompareChat } from "./components/CompareChat";
+import { EcsCompareChat } from "./components/EcsCompareChat";
 
-type ChatMode = "lambda" | "subscription" | "compare";
+type ChatMode = "lambda" | "subscription" | "compare" | "ecsCompare";
 
 interface Stats {
   client: { firstTokenMs: number; endMs: number };
@@ -78,9 +84,11 @@ function App() {
   })();
 
   useEffect(() => {
-    getCurrentUser().then((user) => {
-      setUserEmail(user.signInDetails?.loginId || "");
-    });
+    async function getUserEmail() {
+      const attributes = await fetchUserAttributes();
+      setUserEmail(attributes.email || "");
+    }
+    getUserEmail();
   }, []);
 
   useEffect(() => {
@@ -289,6 +297,9 @@ function App() {
               )}
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline">{userEmail}</span>
+          </div>
           <button
             onClick={handleSignOut}
             className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
@@ -332,6 +343,17 @@ function App() {
               <Radio className="w-4 h-4" />
               AppSync Subscription
             </button>
+            <button
+              onClick={() => setChatMode("ecsCompare")}
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                chatMode === "ecsCompare"
+                  ? "bg-rose-100 text-rose-700"
+                  : "text-slate-500 hover:bg-slate-100"
+              }`}
+            >
+              <Container className="w-4 h-4" />
+              ECS Compare
+            </button>
           </div>
         </div>
       </header>
@@ -354,6 +376,15 @@ function App() {
           }
         >
           <CompareChat />
+        </div>
+        <div
+          className={
+            chatMode === "ecsCompare"
+              ? "flex-1 flex flex-col overflow-hidden"
+              : "hidden"
+          }
+        >
+          <EcsCompareChat />
         </div>
         <div className={chatMode === "lambda" ? "contents" : "hidden"}>
           <>
